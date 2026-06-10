@@ -35,13 +35,22 @@
   </main>
 
   <aside id="panel">
+    <div id="cand-search">
+      <input id="cand-input" type="search"
+             placeholder="Search any candidate (Harris, Walz, Morrison…)"
+             autocomplete="off" aria-label="Search candidates">
+      <div id="cand-results" hidden></div>
+    </div>
     <div id="panel-content">
       <div class="panel-empty">
         <h2>Explore the map</h2>
         <p>Click any area of Plymouth to see how it votes and who lives
            there. Use the buttons above the map to switch between
            precincts, city wards, and legislative districts.</p>
-        <p><a href="#" id="citywide-link">Or view citywide results →</a></p>
+        <p>Or <b>search a candidate above</b> to map where they ran strong
+           or weak — and compare them head-to-head against any other
+           candidate over the same geography.</p>
+        <p><a href="#" id="citywide-link">View citywide results →</a></p>
       </div>
     </div>
   </aside>
