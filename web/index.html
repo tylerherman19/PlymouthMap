@@ -22,9 +22,17 @@
     <button data-layer="house">MN House</button>
     <button data-layer="senate">MN Senate</button>
     <button data-layer="congress">U.S. House</button>
+    <span class="picker-label picker-gap">Color by</span>
+    <button data-view="margin" class="active view-btn">Vote margin</button>
+    <button data-view="income" class="view-btn">Income</button>
+    <button data-view="age" class="view-btn">Age</button>
+    <button data-view="diversity" class="view-btn">Diversity</button>
   </nav>
 
-  <main id="map" aria-label="Map of Plymouth, Minnesota"></main>
+  <main id="map-wrap">
+    <div id="map" aria-label="Map of Plymouth, Minnesota"></div>
+    <div id="legend"></div>
+  </main>
 
   <aside id="panel">
     <div id="panel-content">
@@ -37,12 +45,6 @@
       </div>
     </div>
   </aside>
-
-  <div id="legend">
-    <span class="swatch" style="background:#2166ac"></span> DFL margin
-    <span class="swatch" style="background:#b2182b; margin-left:10px"></span> GOP margin
-    <span class="legend-note">2024 presidential two-party vote</span>
-  </div>
 
   <footer id="credits">
     Data: <a href="https://electionresults.sos.mn.gov" target="_blank" rel="noopener">MN Secretary of State</a> ·

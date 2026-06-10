@@ -15,12 +15,25 @@ const LAYERS = {
 const PARTY_COLORS = { DFL: "#2166ac", R: "#b2182b", NP: "#0e7490", WI: "#d1d5db" };
 const OTHER_COLOR = "#9ca3af";
 
+// Demographic map views: how to read a value and how to paint it.
+const VIEWS = {
+  margin:    { label: "Vote margin" },
+  income:    { label: "Median household income", lo: "#edf8e9", hi: "#00541f",
+               value: d => d?.medianIncome, format: v => "$" + Math.round(v).toLocaleString("en-US") },
+  age:       { label: "Median age", lo: "#f2f0f7", hi: "#4a1486",
+               value: d => d?.medianAge, format: v => v.toFixed(1) + " yrs" },
+  diversity: { label: "Residents of color", lo: "#feedde", hi: "#8c2d04",
+               value: d => d && d.population ? (d.population - d.white) / d.population : null,
+               format: v => (100 * v).toFixed(0) + "%" },
+};
+
 const state = {
   map: null,
   data: {},          // layer name -> geojson
   elections: null,
   demographics: null,
   activeLayer: "precincts",
+  colorBy: "margin",
   leafletLayer: null,
   selectedId: null,
 };
@@ -53,8 +66,17 @@ async function init() {
   }).addTo(state.map);
   state.map.fitBounds(cityLayer.getBounds().pad(0.04));
 
-  document.querySelectorAll("#layer-picker button").forEach(btn => {
+  document.querySelectorAll("#layer-picker button[data-layer]").forEach(btn => {
     btn.addEventListener("click", () => setLayer(btn.dataset.layer));
+  });
+  document.querySelectorAll("#layer-picker button[data-view]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.colorBy = btn.dataset.view;
+      document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
+        b.classList.toggle("active", b === btn));
+      refreshStyles();
+      renderLegend();
+    });
   });
   document.getElementById("citywide-link").addEventListener("click", e => {
     e.preventDefault();
@@ -76,6 +98,7 @@ function setLayer(name) {
 
   if (state.leafletLayer) state.map.removeLayer(state.leafletLayer);
   const kind = LAYERS[name].kind;
+  renderLegend();
 
   state.leafletLayer = L.geoJSON(state.data[name], {
     style: f => styleFor(kind, f.properties.id),
@@ -118,13 +141,41 @@ function twoPartyMargin(kind, id) {
   return null;
 }
 
+function viewRange(kind) {
+  // min/max of the active demographic across the active layer's areas
+  const view = VIEWS[state.colorBy];
+  const values = state.data[state.activeLayer].features
+    .map(f => view.value(state.demographics.areas[kind]?.[f.properties.id]))
+    .filter(v => v != null);
+  if (!values.length) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+function lerpColor(a, b, t) {
+  const ch = (hex, i) => parseInt(hex.slice(1 + 2 * i, 3 + 2 * i), 16);
+  const mix = i => Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t);
+  return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+}
+
 function styleFor(kind, id) {
-  const margin = twoPartyMargin(kind, id);
   const selected = id === state.selectedId;
   let fill = "#d1d5db", opacity = 0.35;
-  if (margin !== null) {
-    fill = margin >= 0 ? PARTY_COLORS.DFL : PARTY_COLORS.R;
-    opacity = 0.12 + Math.min(Math.abs(margin) / 0.5, 1) * 0.55;
+
+  if (state.colorBy === "margin") {
+    const margin = twoPartyMargin(kind, id);
+    if (margin !== null) {
+      fill = margin >= 0 ? PARTY_COLORS.DFL : PARTY_COLORS.R;
+      opacity = 0.12 + Math.min(Math.abs(margin) / 0.5, 1) * 0.55;
+    }
+  } else {
+    const view = VIEWS[state.colorBy];
+    const v = view.value(state.demographics.areas[kind]?.[id]);
+    const range = viewRange(kind);
+    if (v != null && range) {
+      const t = range.max > range.min ? (v - range.min) / (range.max - range.min) : 0.5;
+      fill = lerpColor(view.lo, view.hi, t);
+      opacity = 0.65;
+    }
   }
   return {
     color: selected ? "#111827" : "#ffffff",
@@ -132,6 +183,26 @@ function styleFor(kind, id) {
     fillColor: fill,
     fillOpacity: opacity,
   };
+}
+
+function renderLegend() {
+  const el = document.getElementById("legend");
+  if (state.colorBy === "margin") {
+    el.innerHTML = `
+      <span class="swatch" style="background:${PARTY_COLORS.DFL}"></span> DFL margin
+      <span class="swatch" style="background:${PARTY_COLORS.R}; margin-left:10px"></span> GOP margin
+      <span class="legend-note">most recent top-of-ticket two-party vote</span>`;
+    return;
+  }
+  const view = VIEWS[state.colorBy];
+  const range = viewRange(LAYERS[state.activeLayer].kind);
+  if (!range) { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <span>${esc(view.format(range.min))}</span>
+    <span class="gradient" style="background:linear-gradient(to right,
+      ${view.lo}, ${view.hi})"></span>
+    <span>${esc(view.format(range.max))}</span>
+    <span class="legend-note">${esc(view.label)}</span>`;
 }
 
 /* ---------- side panel ---------- */
@@ -208,13 +279,56 @@ function electionsHtml(unit) {
                district lines changed with the 2022 redistricting.</p></div>`;
       continue;
     }
-    races.forEach(r => { html += raceHtml(r); });
+    races.forEach(r => { html += raceHtml(r, cycle.id); });
     html += `</div>`;
   }
   return html;
 }
 
-function raceHtml(race) {
+function shortName(name) {
+  // "Kamala D. Harris and Tim Walz" -> "Kamala D. Harris" (ticket races)
+  return name.split(" and ")[0];
+}
+
+function wardBreakdownHtml(race, cycleId) {
+  // Same office, same cycle, looked up in each ward's aggregated results.
+  const wardResults = state.elections.results.ward;
+  const wards = Object.keys(wardResults).sort().filter(w =>
+    wardResults[w][cycleId]?.some(r => r.office === race.office));
+  if (!wards.length) return "";
+
+  const wardRace = w => wardResults[w][cycleId].find(r => r.office === race.office);
+  // Candidate order follows the selected area's race; add any candidates
+  // that only appear in some wards.
+  const names = race.candidates.map(c => c.name);
+  wards.forEach(w => wardRace(w).candidates.forEach(c => {
+    if (!names.includes(c.name)) names.push(c.name);
+  }));
+
+  const head = `<tr><th>Candidate</th>${wards.map(w =>
+    `<th>W${esc(w)}</th>`).join("")}</tr>`;
+  const rows = names.map(name => {
+    const cells = wards.map(w => {
+      const r = wardRace(w);
+      const c = r.candidates.find(c => c.name === name);
+      if (!c) return "<td>—</td>";
+      return `<td><b>${fmt(c.votes)}</b><span class="tpct">${pct(c.votes, r.total)}</span></td>`;
+    }).join("");
+    return `<tr><td class="cname">${esc(shortName(name))}</td>${cells}</tr>`;
+  }).join("");
+  const totals = `<tr class="totals"><td>Total votes</td>${wards.map(w =>
+    `<td>${fmt(wardRace(w).total)}</td>`).join("")}</tr>`;
+
+  const note = wards.length < Object.keys(wardResults).length
+    ? `<p class="fineprint" style="margin:4px 0 0">Only wards where this race
+       was on the ballot are shown.</p>` : "";
+  return `<details class="ward-breakdown">
+    <summary>Ward-by-ward breakdown</summary>
+    <div class="tbl-scroll"><table>${head}${rows}${totals}</table></div>${note}
+  </details>`;
+}
+
+function raceHtml(race, cycleId) {
   const bar = race.candidates
     .filter(c => c.votes > 0)
     .map(c => `<div style="width:${(100 * c.votes / race.total)}%;
@@ -234,6 +348,7 @@ function raceHtml(race) {
     <div class="race-office">${esc(race.office)}</div>
     <div class="race-bar-wrap"><div class="race-bar">${bar}</div></div>
     ${rows}${more}
+    ${wardBreakdownHtml(race, cycleId)}
   </div>`;
 }
 

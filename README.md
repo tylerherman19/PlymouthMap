@@ -23,14 +23,21 @@ static web page backed by pre-processed open data.
   - **Demographics** from the U.S. Census Bureau's American Community
     Survey: population, median household income, racial composition, and
     median age.
+- **Break any race down by ward** — every race in the side panel (state
+  legislative, governor, federal, and city races alike) has a
+  "Ward-by-ward breakdown" table comparing each candidate's votes and
+  share across Plymouth's four wards.
 - **Toggle geographic layers**:
   - Voting precincts
   - City wards (Plymouth has 4)
   - Minnesota House districts
   - Minnesota Senate districts
   - U.S. Congressional district (MN‑03)
-- **See the political lean at a glance** — precincts are shaded by the
-  two‑party margin in the most recent top‑of‑ticket race.
+- **Switch what the map colors mean** — shade areas by vote margin
+  (default), median household income, median age, or share of residents
+  of color.
+- **Use it on a phone** — the layout adapts to small screens: map on top,
+  details below, scrollable layer chips.
 
 Results for wards and districts are computed by summing the official
 precinct‑level vote counts of the precincts inside each area.
