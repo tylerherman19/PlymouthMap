@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plymouth Votes — election &amp; demographic map of Plymouth, MN</title>
+  <meta name="description"
+        content="Explore how different parts of Plymouth, Minnesota vote, with election results and census demographics for every precinct, ward, and district.">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="topbar">
+    <h1>Plymouth Votes</h1>
+    <p>How Plymouth, Minnesota votes — by precinct, ward, and district</p>
+  </header>
+
+  <nav id="layer-picker" aria-label="Map layer">
+    <span class="picker-label">Show</span>
+    <button data-layer="precincts" class="active">Precincts</button>
+    <button data-layer="wards">Wards</button>
+    <button data-layer="house">MN House</button>
+    <button data-layer="senate">MN Senate</button>
+    <button data-layer="congress">U.S. House</button>
+    <span class="picker-label picker-gap">Color by</span>
+    <button data-view="margin" class="active view-btn">Vote margin</button>
+    <button data-view="income" class="view-btn">Income</button>
+    <button data-view="age" class="view-btn">Age</button>
+    <button data-view="diversity" class="view-btn">Diversity</button>
+  </nav>
+
+  <main id="map-wrap">
+    <div id="map" aria-label="Map of Plymouth, Minnesota"></div>
+    <div id="legend"></div>
+  </main>
+
+  <aside id="panel">
+    <div id="panel-content">
+      <div class="panel-empty">
+        <h2>Explore the map</h2>
+        <p>Click any area of Plymouth to see how it votes and who lives
+           there. Use the buttons above the map to switch between
+           precincts, city wards, and legislative districts.</p>
+        <p><a href="#" id="citywide-link">Or view citywide results →</a></p>
+      </div>
+    </div>
+  </aside>
+
+  <footer id="credits">
+    Data: <a href="https://electionresults.sos.mn.gov" target="_blank" rel="noopener">MN Secretary of State</a> ·
+    <a href="https://gis-hennepin.hub.arcgis.com/" target="_blank" rel="noopener">Hennepin County GIS</a> ·
+    <a href="https://www.census.gov/programs-surveys/acs" target="_blank" rel="noopener">Census ACS 2023</a>
+  </footer>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
