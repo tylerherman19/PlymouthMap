@@ -99,8 +99,8 @@ What each step does:
      portal). Precinct records carry their ward, MN House/Senate, and
      congressional district assignments, which is how everything joins
      together.
-   - **MN House / MN Senate / U.S. Congressional districts**: U.S. Census
-     TIGER/Line 2023 shapefiles (these reflect Minnesota's 2022
+   - **MN House / MN Senate / U.S. Congressional districts**: the U.S.
+     Census Bureau's TIGERweb API (these reflect Minnesota's 2022
      redistricting). Only districts that contain Plymouth precincts are
      kept.
    - Geometries are simplified slightly so the app stays fast.
@@ -112,14 +112,20 @@ What each step does:
    change between cycles; results are matched by the state precinct code,
    and older cycles that don't match current boundaries are still shown at
    the ward/district level.
-3. **`03_demographics.py`** — queries the Census Bureau's ACS 5‑year (2023)
-   API for every census tract in Hennepin County (population `B01003_001E`,
-   median income `B19013_001E`, white `B02001_002E`, Black `B02001_003E`,
-   median age `B01002_001E`), downloads tract boundaries, and computes
+3. **`03_demographics.py`** — fetches ACS 5‑year estimates for every census
+   tract in Hennepin County (population `B01003_001E`, median income
+   `B19013_001E`, white `B02001_002E`, Black `B02001_003E`, median age
+   `B01002_001E`), downloads tract boundaries, and computes
    **area‑weighted** estimates for each precinct, ward, and district:
    counts are apportioned by how much of each tract overlaps the area;
    medians are population‑weighted averages. District figures cover the
    Hennepin County portion of each district.
+
+   The Census Bureau's data API requires a (free) API key. If you set a
+   `CENSUS_API_KEY` environment variable the script uses the official
+   ACS 2019–2023 API; otherwise it falls back to
+   [Census Reporter](https://censusreporter.org)'s public mirror of the
+   latest ACS release. Either way the same five tables are used.
 
 Everything lands in `web/data/` as plain GeoJSON/JSON that the frontend
 reads directly. There is no database and no server-side code.
@@ -129,9 +135,9 @@ reads directly. There is no database and no server-side code.
 | Data | Source |
 | --- | --- |
 | City boundary, wards, precincts | [Hennepin County GIS open data](https://gis-hennepin.hub.arcgis.com/) |
-| MN House / Senate / U.S. House districts | [Census TIGER/Line 2023](https://www2.census.gov/geo/tiger/TIGER2023/) |
+| MN House / Senate / U.S. House districts, census tracts | [Census TIGERweb](https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb) |
 | Election results (2020, 2022, 2024) | [MN Secretary of State](https://electionresults.sos.mn.gov) precinct results files |
-| Demographics | [Census ACS 5‑year 2023 API](https://api.census.gov/data/2023/acs/acs5) |
+| Demographics | [Census ACS 5‑year API](https://api.census.gov/data/2023/acs/acs5) (or [Census Reporter](https://censusreporter.org) without a key) |
 
 ---
 
