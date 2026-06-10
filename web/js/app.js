@@ -27,6 +27,10 @@ const VIEWS = {
                format: v => (100 * v).toFixed(0) + "%" },
 };
 
+// Distinct colors for head-to-head mode when both candidates share a party
+// color (e.g. two nonpartisan city candidates).
+const DUEL_A = "#0e7490", DUEL_B = "#c2410c";
+
 const state = {
   map: null,
   data: {},          // layer name -> geojson
@@ -36,6 +40,10 @@ const state = {
   colorBy: "margin",
   leafletLayer: null,
   selectedId: null,
+  mode: "area",      // "area" | "candidate"
+  candA: null,       // {cycle, office, name, party, ...}
+  candB: null,       // optional comparison candidate
+  candidateIndex: [],
 };
 
 init();
@@ -66,11 +74,14 @@ async function init() {
   }).addTo(state.map);
   state.map.fitBounds(cityLayer.getBounds().pad(0.04));
 
+  buildCandidateIndex();
+
   document.querySelectorAll("#layer-picker button[data-layer]").forEach(btn => {
     btn.addEventListener("click", () => setLayer(btn.dataset.layer));
   });
   document.querySelectorAll("#layer-picker button[data-view]").forEach(btn => {
     btn.addEventListener("click", () => {
+      if (state.mode === "candidate") exitCandidateMode(true);
       state.colorBy = btn.dataset.view;
       document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
         b.classList.toggle("active", b === btn));
@@ -78,12 +89,27 @@ async function init() {
       renderLegend();
     });
   });
-  document.getElementById("citywide-link").addEventListener("click", e => {
-    e.preventDefault();
-    state.selectedId = null;
-    refreshStyles();
-    renderPanel("city", "plymouth", { name: "City of Plymouth" });
+  // The panel re-renders constantly, so handle its links by delegation.
+  document.getElementById("panel-content").addEventListener("click", e => {
+    const a = e.target.closest("a");
+    if (!a) return;
+    if (a.id === "citywide-link") {
+      e.preventDefault();
+      state.selectedId = null;
+      refreshStyles();
+      renderPanel("city", "plymouth", { name: "City of Plymouth" });
+    } else if (a.id === "exit-candidate") {
+      e.preventDefault();
+      exitCandidateMode(true);
+    } else if (a.id === "remove-candB") {
+      e.preventDefault();
+      state.candB = null;
+      candidateModeChanged();
+    }
   });
+  attachSearch(document.getElementById("cand-input"),
+               document.getElementById("cand-results"),
+               cand => enterCandidate(cand));
 
   setLayer("precincts");
 }
@@ -103,16 +129,32 @@ function setLayer(name) {
   state.leafletLayer = L.geoJSON(state.data[name], {
     style: f => styleFor(kind, f.properties.id),
     onEachFeature: (f, lyr) => {
-      lyr.bindTooltip(f.properties.name, { sticky: true, direction: "top" });
+      lyr.bindTooltip(() => tooltipFor(kind, f.properties),
+                      { sticky: true, direction: "top" });
       lyr.on("click", () => {
         state.selectedId = f.properties.id;
         refreshStyles();
-        renderPanel(kind, f.properties.id, f.properties);
+        if (state.mode === "candidate") renderCandidatePanel();
+        else renderPanel(kind, f.properties.id, f.properties);
       });
       lyr.on("mouseover", () => lyr.setStyle({ weight: 3, color: "#111827" }));
       lyr.on("mouseout", () => refreshStyles());
     },
   }).addTo(state.map);
+
+  if (state.mode === "candidate") renderCandidatePanel();
+}
+
+function tooltipFor(kind, props) {
+  if (state.mode !== "candidate") return esc(props.name);
+  let html = `<b>${esc(props.name)}</b>`;
+  for (const cand of [state.candA, state.candB]) {
+    if (!cand) continue;
+    const s = candStats(cand, kind, props.id);
+    html += `<br>${esc(shortName(cand.name))}: ` +
+            (s ? `${pct(s.votes, s.total)} (${fmt(s.votes)})` : "not on ballot");
+  }
+  return html;
 }
 
 function refreshStyles() {
@@ -157,15 +199,45 @@ function lerpColor(a, b, t) {
   return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
 }
 
+// Diverging gradient: t in [-1, 1]; negative pulls toward colNeg, positive
+// toward colPos, through white at zero — the classic election-map ramp.
+function divergingColor(colNeg, colPos, t) {
+  t = Math.max(-1, Math.min(1, t));
+  return t >= 0 ? lerpColor("#ffffff", colPos, 0.08 + 0.92 * t)
+                : lerpColor("#ffffff", colNeg, 0.08 + 0.92 * -t);
+}
+
 function styleFor(kind, id) {
   const selected = id === state.selectedId;
   let fill = "#d1d5db", opacity = 0.35;
 
-  if (state.colorBy === "margin") {
+  if (state.mode === "candidate") {
+    const [colA, colB] = duelColors();
+    if (state.candB) {
+      const a = candStats(state.candA, kind, id);
+      const b = candStats(state.candB, kind, id);
+      if (a || b) {
+        const diff = (a?.share ?? 0) - (b?.share ?? 0);
+        const max = maxAbsDiff(kind) || 1;
+        fill = divergingColor(colB, colA, diff / max);
+        opacity = 0.7;
+      }
+    } else {
+      const s = candStats(state.candA, kind, id);
+      if (s) {
+        const max = maxShare(kind) || 1;
+        fill = lerpColor("#ffffff", colA, 0.08 + 0.92 * (s.share / max));
+        opacity = 0.7;
+      } else {
+        opacity = 0.15;  // not on the ballot here
+      }
+    }
+  } else if (state.colorBy === "margin") {
     const margin = twoPartyMargin(kind, id);
     if (margin !== null) {
-      fill = margin >= 0 ? PARTY_COLORS.DFL : PARTY_COLORS.R;
-      opacity = 0.12 + Math.min(Math.abs(margin) / 0.5, 1) * 0.55;
+      // ±50 % two-party margin saturates the red-blue gradient
+      fill = divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, margin / 0.5);
+      opacity = 0.7;
     }
   } else {
     const view = VIEWS[state.colorBy];
@@ -187,11 +259,33 @@ function styleFor(kind, id) {
 
 function renderLegend() {
   const el = document.getElementById("legend");
+  if (state.mode === "candidate") {
+    const [colA, colB] = duelColors();
+    if (state.candB) {
+      el.innerHTML = `
+        <span>${esc(shortName(state.candB.name))}</span>
+        <span class="gradient" style="background:linear-gradient(to right,
+          ${colB}, #ffffff, ${colA})"></span>
+        <span>${esc(shortName(state.candA.name))}</span>
+        <span class="legend-note">who's stronger where</span>`;
+    } else {
+      const max = maxShare(LAYERS[state.activeLayer].kind);
+      el.innerHTML = `
+        <span>0%</span>
+        <span class="gradient" style="background:linear-gradient(to right,
+          #ffffff, ${colA})"></span>
+        <span>${max ? (100 * max).toFixed(0) + "%" : ""}</span>
+        <span class="legend-note">${esc(shortName(state.candA.name))} vote share</span>`;
+    }
+    return;
+  }
   if (state.colorBy === "margin") {
     el.innerHTML = `
-      <span class="swatch" style="background:${PARTY_COLORS.DFL}"></span> DFL margin
-      <span class="swatch" style="background:${PARTY_COLORS.R}; margin-left:10px"></span> GOP margin
-      <span class="legend-note">most recent top-of-ticket two-party vote</span>`;
+      <span>R +50%</span>
+      <span class="gradient" style="background:linear-gradient(to right,
+        ${PARTY_COLORS.R}, #ffffff, ${PARTY_COLORS.DFL})"></span>
+      <span>DFL +50%</span>
+      <span class="legend-note">two-party margin, latest top-of-ticket race</span>`;
     return;
   }
   const view = VIEWS[state.colorBy];
@@ -350,6 +444,290 @@ function raceHtml(race, cycleId) {
     ${rows}${more}
     ${wardBreakdownHtml(race, cycleId)}
   </div>`;
+}
+
+/* ---------- candidate explorer ---------- */
+
+function buildCandidateIndex() {
+  // One entry per (cycle, office, candidate), from citywide results.
+  const out = [];
+  const cityRaces = state.elections.results.city.plymouth;
+  for (const cycle of state.elections.cycles) {
+    (cityRaces[cycle.id] || []).forEach(race => {
+      race.candidates.forEach(c => {
+        if (c.party === "WI") return;
+        out.push({
+          key: `${cycle.id}|${race.office}|${c.name}`,
+          cycle: cycle.id, cycleName: cycle.name, office: race.office,
+          name: c.name, party: c.party, partyName: c.partyName,
+          cityVotes: c.votes, cityTotal: race.total,
+        });
+      });
+    });
+  }
+  state.candidateIndex = out;
+}
+
+function candStats(cand, kind, id) {
+  // The candidate's votes and share of their own race in one map area.
+  const races = state.elections.results[kind]?.[id]?.[cand.cycle];
+  const race = races?.find(r => r.office === cand.office);
+  if (!race || !race.total) return null;
+  const c = race.candidates.find(x => x.name === cand.name);
+  if (!c) return null;
+  return { votes: c.votes, total: race.total, share: c.votes / race.total };
+}
+
+function activeUnits() {
+  return state.data[state.activeLayer].features.map(f => f.properties);
+}
+
+function maxShare(kind) {
+  let max = 0;
+  for (const p of activeUnits()) {
+    const s = candStats(state.candA, kind, p.id);
+    if (s && s.share > max) max = s.share;
+  }
+  return max;
+}
+
+function maxAbsDiff(kind) {
+  let max = 0;
+  for (const p of activeUnits()) {
+    const a = candStats(state.candA, kind, p.id);
+    const b = candStats(state.candB, kind, p.id);
+    if (!a && !b) continue;
+    const d = Math.abs((a?.share ?? 0) - (b?.share ?? 0));
+    if (d > max) max = d;
+  }
+  return max;
+}
+
+function duelColors() {
+  const colA = PARTY_COLORS[state.candA?.party] ?? OTHER_COLOR;
+  if (!state.candB) return [colA === "#d1d5db" ? DUEL_A : colA, null];
+  const colB = PARTY_COLORS[state.candB.party] ?? OTHER_COLOR;
+  return colA === colB ? [DUEL_A, DUEL_B] : [colA, colB];
+}
+
+function enterCandidate(cand) {
+  state.mode = "candidate";
+  state.candA = cand;
+  state.candB = null;
+  document.getElementById("cand-input").value = "";
+  candidateModeChanged();
+}
+
+function exitCandidateMode(rerender) {
+  state.mode = "area";
+  state.candA = state.candB = null;
+  state.selectedId = null;
+  if (rerender) {
+    refreshStyles();
+    renderLegend();
+    document.getElementById("panel-content").innerHTML = `
+      <div class="panel-empty">
+        <h2>Explore the map</h2>
+        <p>Click any area of Plymouth to see how it votes and who lives
+           there — or search a candidate above to map their performance.</p>
+        <p><a href="#" id="citywide-link">View citywide results →</a></p>
+      </div>`;
+  }
+}
+
+function candidateModeChanged() {
+  refreshStyles();
+  renderLegend();
+  renderCandidatePanel();
+}
+
+function attachSearch(input, resultsEl, onPick, getSuggestions) {
+  const close = () => { resultsEl.hidden = true; };
+  const show = items => {
+    if (!items.length) { close(); return; }
+    resultsEl.innerHTML = items.slice(0, 20).map((c, i) => `
+      <button data-i="${i}" class="cand-hit">
+        <span class="dot" style="background:${PARTY_COLORS[c.party] ?? OTHER_COLOR}"></span>
+        <span class="hit-main">${esc(c.name)}</span>
+        <span class="hit-sub">${esc(c.partyName)} · ${esc(c.office)} · ${esc(c.cycle)}</span>
+      </button>`).join("");
+    resultsEl.hidden = false;
+    resultsEl.querySelectorAll("button").forEach(btn =>
+      btn.addEventListener("mousedown", e => {  // mousedown beats input blur
+        e.preventDefault();
+        close();
+        onPick(items[+btn.dataset.i]);
+      }));
+  };
+  const search = () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { show(getSuggestions ? getSuggestions() : []); return; }
+    const scored = state.candidateIndex
+      .map(c => {
+        const name = c.name.toLowerCase(), office = c.office.toLowerCase();
+        let score = -1;
+        if (name.startsWith(q)) score = 0;
+        else if (name.split(" ").some(w => w.startsWith(q))) score = 1;
+        else if (name.includes(q)) score = 2;
+        else if (office.includes(q)) score = 3;
+        return { c, score };
+      })
+      .filter(x => x.score >= 0)
+      .sort((x, y) => x.score - y.score || y.c.cycle.localeCompare(x.c.cycle)
+                      || y.c.cityVotes - x.c.cityVotes);
+    show(scored.map(x => x.c));
+  };
+  input.addEventListener("input", search);
+  input.addEventListener("focus", search);
+  input.addEventListener("blur", () => setTimeout(close, 150));
+  input.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+}
+
+function compareSuggestions() {
+  const a = state.candA;
+  const rivals = state.candidateIndex.filter(c =>
+    c.cycle === a.cycle && c.office === a.office && c.key !== a.key);
+  const sameName = state.candidateIndex.filter(c =>
+    c.key !== a.key && shortName(c.name) === shortName(a.name));
+  return [...rivals, ...sameName];
+}
+
+function rankedUnits(kind) {
+  // Areas ranked by candidate A's share (or A−B diff in compare mode).
+  const rows = [];
+  for (const p of activeUnits()) {
+    const a = candStats(state.candA, kind, p.id);
+    const b = state.candB ? candStats(state.candB, kind, p.id) : null;
+    if (!a && !b) continue;
+    rows.push({
+      name: p.name, a, b,
+      sort: state.candB ? (a?.share ?? 0) - (b?.share ?? 0) : (a?.share ?? 0),
+    });
+  }
+  return rows.sort((x, y) => y.sort - x.sort);
+}
+
+function candHeaderHtml(cand, removable) {
+  const col = PARTY_COLORS[cand.party] ?? OTHER_COLOR;
+  return `
+    <div class="cand-head">
+      <span class="dot big" style="background:${col}"></span>
+      <div>
+        <div class="cand-name">${esc(cand.name)}
+          ${removable ? ' <a href="#" id="remove-candB" title="Remove comparison">✕</a>' : ""}</div>
+        <div class="cand-meta">${esc(cand.partyName)} · ${esc(cand.office)} · ${esc(cand.cycleName)}</div>
+        <div class="cand-meta">Citywide: <b>${fmt(cand.cityVotes)}</b> votes ·
+          ${pct(cand.cityVotes, cand.cityTotal)} of ${fmt(cand.cityTotal)}</div>
+      </div>
+    </div>`;
+}
+
+function candWardTableHtml() {
+  const wards = Object.keys(state.elections.results.ward).sort();
+  const both = !!state.candB;
+  const head = `<tr><th>Ward</th><th>${esc(shortName(state.candA.name))}</th>` +
+    (both ? `<th>${esc(shortName(state.candB.name))}</th><th>Edge</th>` : "<th>Share</th>") +
+    `</tr>`;
+  const rows = wards.map(w => {
+    const a = candStats(state.candA, "ward", w);
+    const b = both ? candStats(state.candB, "ward", w) : null;
+    let cells;
+    if (both) {
+      const diff = (a || b) ? ((a?.share ?? 0) - (b?.share ?? 0)) * 100 : null;
+      cells = `<td>${a ? `<b>${fmt(a.votes)}</b><span class="tpct">${pct(a.votes, a.total)}</span>` : "—"}</td>
+               <td>${b ? `<b>${fmt(b.votes)}</b><span class="tpct">${pct(b.votes, b.total)}</span>` : "—"}</td>
+               <td>${diff == null ? "—" : (diff >= 0 ? "+" : "") + diff.toFixed(1) + " pp"}</td>`;
+    } else {
+      cells = `<td><b>${a ? fmt(a.votes) : "—"}</b></td>
+               <td>${a ? pct(a.votes, a.total) : "not on ballot"}</td>`;
+    }
+    return `<tr><td>Ward ${esc(w)}</td>${cells}</tr>`;
+  }).join("");
+  return `<h3 class="section-title">By ward</h3>
+    <div class="tbl-scroll"><table class="cand-table">${head}${rows}</table></div>`;
+}
+
+function bestWorstHtml(kind) {
+  const ranked = rankedUnits(kind);
+  if (!ranked.length) return "";
+  const layerLabel = LAYERS[state.activeLayer].label.toLowerCase() + "s";
+  const row = (r, flip) => {
+    if (state.candB) {
+      const d = ((r.a?.share ?? 0) - (r.b?.share ?? 0)) * 100 * (flip ? -1 : 1);
+      return `<div class="bw-row"><span>${esc(r.name)}</span>
+        <span>${(d >= 0 ? "+" : "") + d.toFixed(1)} pp</span></div>`;
+    }
+    return `<div class="bw-row"><span>${esc(r.name)}</span>
+      <span>${r.a ? pct(r.a.votes, r.a.total) : "—"}</span></div>`;
+  };
+  const top = ranked.slice(0, 3), bottom = ranked.slice(-3).reverse();
+  const aName = shortName(state.candA.name);
+  let titleTop, titleBot, flipBottom = false;
+  if (state.candB) {
+    // If B never actually leads anywhere, the bottom list is A's closest
+    // areas, not B's strongholds — label it honestly.
+    flipBottom = ranked[ranked.length - 1].sort < 0;
+    titleTop = `Best for ${aName}`;
+    titleBot = flipBottom
+      ? `Best for ${shortName(state.candB.name)}`
+      : `Closest for ${aName}`;
+  } else {
+    titleTop = `Strongest ${layerLabel}`;
+    titleBot = `Weakest ${layerLabel}`;
+  }
+  return `
+    <div class="bw-grid">
+      <div><h4>${esc(titleTop)}</h4>${top.map(r => row(r, false)).join("")}</div>
+      <div><h4>${esc(titleBot)}</h4>${bottom.map(r => row(r, flipBottom)).join("")}</div>
+    </div>`;
+}
+
+function selectedAreaHtml(kind) {
+  if (!state.selectedId) return `<p class="fineprint" style="margin-top:10px">
+    Tip: click any area on the map to see exact numbers there.</p>`;
+  const p = activeUnits().find(u => u.id === state.selectedId);
+  if (!p) return "";
+  let lines = "";
+  for (const cand of [state.candA, state.candB]) {
+    if (!cand) continue;
+    const s = candStats(cand, kind, p.id);
+    lines += `<div class="bw-row"><span>${esc(shortName(cand.name))}</span>
+      <span>${s ? `${pct(s.votes, s.total)} · ${fmt(s.votes)} votes` : "not on ballot"}</span></div>`;
+  }
+  return `<h3 class="section-title">In ${esc(p.name)}</h3>${lines}`;
+}
+
+function renderCandidatePanel() {
+  const kind = LAYERS[state.activeLayer].kind;
+  const el = document.getElementById("panel-content");
+  const compareBox = state.candB ? candHeaderHtml(state.candB, true) : `
+    <div class="compare-box">
+      <input id="compare-input" type="search"
+             placeholder="Compare with… (opponents, other years)"
+             autocomplete="off" aria-label="Compare with another candidate">
+      <div id="compare-results" hidden></div>
+    </div>`;
+
+  el.innerHTML = `
+    <p class="area-kicker"><a href="#" id="exit-candidate">← Back to map areas</a></p>
+    ${candHeaderHtml(state.candA, false)}
+    ${state.candB ? '<div class="vs-divider">vs</div>' : ""}
+    ${compareBox}
+    ${bestWorstHtml(kind)}
+    ${candWardTableHtml()}
+    ${selectedAreaHtml(kind)}
+    <p class="fineprint">The map shades each ${esc(LAYERS[state.activeLayer].label.toLowerCase())}
+      by ${state.candB
+        ? "who got the larger share of their own race's vote there — deeper color means a bigger gap"
+        : esc(shortName(state.candA.name)) + "'s share of the vote in their race — deeper color means a stronger result"}.
+      Hover or tap areas for exact numbers. Shares are of each candidate's
+      own race, so candidates from different races and years can be compared
+      over the same geography.</p>`;
+
+  const ci = document.getElementById("compare-input");
+  if (ci) attachSearch(ci, document.getElementById("compare-results"),
+    cand => { state.candB = cand; candidateModeChanged(); },
+    compareSuggestions);
 }
 
 function esc(s) {

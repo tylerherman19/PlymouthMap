@@ -34,8 +34,14 @@ static web page backed by pre-processed open data.
   - Minnesota Senate districts
   - U.S. Congressional district (MN‑03)
 - **Switch what the map colors mean** — shade areas by vote margin
-  (default), median household income, median age, or share of residents
-  of color.
+  (default, on a classic red‑to‑blue election gradient), median household
+  income, median age, or share of residents of color.
+- **Drill into any candidate** — search a candidate by name and the map
+  shades every area by their vote share, with their strongest and weakest
+  areas, a ward table, and exact numbers wherever you click.
+- **Compare candidates head-to-head** — add a second candidate (an
+  opponent, or the same person in a different year) and the map shows
+  who was stronger where, over the same geography.
 - **Use it on a phone** — the layout adapts to small screens: map on top,
   details below, scrollable layer chips.
 

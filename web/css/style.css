@@ -140,9 +140,8 @@ body {
   padding: 1px 0;
 }
 .cand-row .nm { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cand-row .nm span.dot {
-  width: 8px; height: 8px; border-radius: 50%; flex: none;
-}
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.dot.big { width: 12px; height: 12px; margin-top: 5px; }
 .cand-row .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
 .cand-row.winner { font-weight: 600; }
 .cand-row.winner .pct { color: var(--ink); }
@@ -153,6 +152,118 @@ body {
 }
 .no-data { font-size: 13px; color: var(--muted); font-style: italic; }
 .fineprint { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 18px; }
+
+/* candidate search + explorer */
+#cand-search, .compare-box { position: relative; }
+#cand-search { padding: 12px 20px 0; }
+#cand-search input, .compare-box input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  outline: none;
+}
+#cand-search input:focus, .compare-box input:focus {
+  border-color: var(--dfl);
+  background: #fff;
+}
+#cand-results, #compare-results {
+  position: absolute;
+  left: 20px; right: 20px;
+  top: calc(100% - 2px);
+  z-index: 1100;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  max-height: 320px;
+  overflow-y: auto;
+}
+#compare-results { left: 0; right: 0; }
+.cand-hit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--bg);
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+.cand-hit:hover { background: var(--bg); }
+.cand-hit .hit-main { font-weight: 600; flex: none; }
+.cand-hit .hit-sub {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cand-head { display: flex; gap: 10px; margin: 10px 0 6px; }
+.cand-name { font-size: 17px; font-weight: 700; }
+.cand-name a { color: var(--muted); text-decoration: none; font-weight: 400; font-size: 13px; }
+.cand-meta { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+.vs-divider {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 2px 0 2px 1px;
+}
+.compare-box { margin: 10px 0 4px; }
+
+.bw-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+.bw-grid h4 {
+  margin: 0 0 5px;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.bw-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+.bw-row span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bw-row span:last-child { font-weight: 600; flex: none; }
+
+.cand-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  width: 100%;
+}
+.cand-table th, .cand-table td {
+  text-align: right;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cand-table th { color: var(--muted); font-weight: 600; }
+.cand-table th:first-child, .cand-table td:first-child { text-align: left; padding-left: 0; }
+.cand-table .tpct { display: block; color: var(--muted); font-size: 11px; }
+#exit-candidate { color: var(--dfl); text-decoration: none; text-transform: none; letter-spacing: 0; }
+#exit-candidate:hover { text-decoration: underline; }
 
 #legend {
   position: absolute;
@@ -250,4 +361,9 @@ body {
   #credits { display: none; }
   .demo-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px 10px; }
   .demo-stat .v { font-size: 16px; }
+  #cand-search { padding: 10px 14px 0; }
+  #cand-search input { font-size: 16px; }   /* prevents iOS zoom-on-focus */
+  .compare-box input { font-size: 16px; }
+  #cand-results { left: 14px; right: 14px; }
+  .bw-grid { grid-template-columns: 1fr 1fr; }
 }
