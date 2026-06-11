@@ -27,11 +27,24 @@
     <button data-view="income" class="view-btn">Income</button>
     <button data-view="age" class="view-btn">Age</button>
     <button data-view="diversity" class="view-btn">Diversity</button>
+    <span class="picker-label picker-gap">Overlay</span>
+    <button data-overlay="income" class="overlay-btn">Income</button>
+    <button data-overlay="age" class="overlay-btn">Age</button>
+    <button data-overlay="diversity" class="overlay-btn">Diversity</button>
+    <span class="picker-gap"></span>
+    <button id="split-toggle" title="Side-by-side comparison of two election years">Compare years</button>
+    <button id="export-btn" title="Download a clean, presentation-ready map graphic">Export slide</button>
   </nav>
 
   <main id="map-wrap">
     <div id="map" aria-label="Map of Plymouth, Minnesota"></div>
     <div id="legend"></div>
+    <div id="split-control" hidden>
+      <div id="split-divider"><div id="split-handle" role="slider"
+           aria-label="Drag to compare years" aria-valuemin="0" aria-valuemax="100">⇆</div></div>
+      <select id="split-left" class="split-year" aria-label="Left year"></select>
+      <select id="split-right" class="split-year" aria-label="Right year"></select>
+    </div>
   </main>
 
   <aside id="panel">

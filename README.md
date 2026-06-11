@@ -42,6 +42,16 @@ static web page backed by pre-processed open data.
 - **Compare candidates head-to-head** — add a second candidate (an
   opponent, or the same person in a different year) and the map shows
   who was stronger where, over the same geography.
+- **Compare election years side by side** — a split-screen mode shows two
+  election cycles at once with a draggable divider, so you can physically
+  sweep across the map and watch precincts shift between years.
+- **Overlay demographics on the vote** — toggle a translucent income, age,
+  or diversity layer on top of any voting map to eyeball how voting
+  patterns line up with neighborhood demographics.
+- **Export a slide graphic in one click** — the "Export slide" button
+  downloads a clean 1920×1080 PNG of the current map (no basemap, no UI
+  controls) with a title and legend, ready to drop into a deck. It works
+  in every mode, including candidate comparisons and split-screen years.
 - **Use it on a phone** — the layout adapts to small screens: map on top,
   details below, scrollable layer chips.
 

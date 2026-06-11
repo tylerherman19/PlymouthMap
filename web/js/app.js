@@ -44,6 +44,10 @@ const state = {
   candA: null,       // {cycle, office, name, party, ...}
   candB: null,       // optional comparison candidate
   candidateIndex: [],
+  split: null,       // {left: cycleId, right: cycleId, t: 0..1} | null
+  splitLayers: { left: null, right: null },
+  overlay: null,     // "income" | "age" | "diversity" | null
+  overlayLayer: null,
 };
 
 init();
@@ -55,6 +59,16 @@ async function init() {
     subdomains: "abcd",
     maxZoom: 17,
   }).addTo(state.map);
+
+  // Custom panes: the year-comparison halves sit just under the interactive
+  // layer; the demographic overlay multiplies on top of it.
+  for (const name of ["splitLeft", "splitRight"]) {
+    state.map.createPane(name).style.zIndex = 380;
+  }
+  const demoPane = state.map.createPane("demoOverlay");
+  demoPane.style.zIndex = 450;
+  demoPane.style.mixBlendMode = "multiply";
+  demoPane.style.pointerEvents = "none";
 
   const files = ["data/city.geojson", "data/elections.json", "data/demographics.json",
                  ...Object.values(LAYERS).map(l => l.file)];
@@ -82,6 +96,7 @@ async function init() {
   document.querySelectorAll("#layer-picker button[data-view]").forEach(btn => {
     btn.addEventListener("click", () => {
       if (state.mode === "candidate") exitCandidateMode(true);
+      if (state.split) exitSplit();
       state.colorBy = btn.dataset.view;
       document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
         b.classList.toggle("active", b === btn));
@@ -110,6 +125,14 @@ async function init() {
   attachSearch(document.getElementById("cand-input"),
                document.getElementById("cand-results"),
                cand => enterCandidate(cand));
+
+  document.querySelectorAll("#layer-picker button[data-overlay]").forEach(btn => {
+    btn.addEventListener("click", () => setOverlay(
+      state.overlay === btn.dataset.overlay ? null : btn.dataset.overlay));
+  });
+  document.getElementById("split-toggle").addEventListener("click", toggleSplit);
+  document.getElementById("export-btn").addEventListener("click", exportSlide);
+  initSplitControl();
 
   setLayer("precincts");
 }
@@ -142,10 +165,22 @@ function setLayer(name) {
     },
   }).addTo(state.map);
 
+  rebuildSplitLayers();
+  rebuildOverlayLayer();
   if (state.mode === "candidate") renderCandidatePanel();
 }
 
 function tooltipFor(kind, props) {
+  if (state.split) {
+    let html = `<b>${esc(props.name)}</b>`;
+    for (const side of ["left", "right"]) {
+      const cy = state.split[side];
+      const m = cycleMargin(kind, props.id, cy);
+      html += `<br>${esc(cy)}: ` + (m === null ? "no results"
+        : (m >= 0 ? "DFL +" : "R +") + (100 * Math.abs(m)).toFixed(1) + "%");
+    }
+    return html;
+  }
   if (state.mode !== "candidate") return esc(props.name);
   let html = `<b>${esc(props.name)}</b>`;
   for (const cand of [state.candA, state.candB]) {
@@ -163,29 +198,33 @@ function refreshStyles() {
     lyr.setStyle(styleFor(kind, lyr.feature.properties.id)));
 }
 
+function cycleMargin(kind, id, cycleId) {
+  // DFL minus GOP share of the two-party vote in the top-of-ticket race of
+  // one election cycle (president if on the ballot, else the first race).
+  const races = state.elections.results[kind]?.[id]?.[cycleId];
+  if (!races) return null;
+  const race = races.find(r => r.office.startsWith("U.S. President")) || races[0];
+  if (!race) return null;
+  let dfl = 0, gop = 0;
+  race.candidates.forEach(c => {
+    if (c.party === "DFL") dfl += c.votes;
+    if (c.party === "R") gop += c.votes;
+  });
+  return dfl + gop > 0 ? (dfl - gop) / (dfl + gop) : null;
+}
+
 function twoPartyMargin(kind, id) {
-  // DFL minus GOP share of the two-party vote in the most recent
-  // top-of-ticket race available for this area.
-  const unit = state.elections.results[kind]?.[id];
-  if (!unit) return null;
-  for (const cycle of state.elections.cycles.map(c => c.id)) {
-    const races = unit[cycle];
-    if (!races) continue;
-    const race = races.find(r => r.office.startsWith("U.S. President")) || races[0];
-    if (!race) continue;
-    let dfl = 0, gop = 0;
-    race.candidates.forEach(c => {
-      if (c.party === "DFL") dfl += c.votes;
-      if (c.party === "R") gop += c.votes;
-    });
-    if (dfl + gop > 0) return (dfl - gop) / (dfl + gop);
+  // Same, in the most recent cycle with results for this area.
+  for (const cycle of state.elections.cycles) {
+    const m = cycleMargin(kind, id, cycle.id);
+    if (m !== null) return m;
   }
   return null;
 }
 
-function viewRange(kind) {
-  // min/max of the active demographic across the active layer's areas
-  const view = VIEWS[state.colorBy];
+function viewRange(kind, viewName = state.colorBy) {
+  // min/max of a demographic across the active layer's areas
+  const view = VIEWS[viewName];
   const values = state.data[state.activeLayer].features
     .map(f => view.value(state.demographics.areas[kind]?.[f.properties.id]))
     .filter(v => v != null);
@@ -210,6 +249,16 @@ function divergingColor(colNeg, colPos, t) {
 function styleFor(kind, id) {
   const selected = id === state.selectedId;
   let fill = "#d1d5db", opacity = 0.35;
+
+  if (state.split) {
+    // The two split panes underneath carry the colors; the interactive
+    // layer only draws borders and the selection outline.
+    return {
+      color: selected ? "#111827" : "#ffffff",
+      weight: selected ? 3 : 1.4,
+      fillOpacity: 0,
+    };
+  }
 
   if (state.mode === "candidate") {
     const [colA, colB] = duelColors();
@@ -257,46 +306,75 @@ function styleFor(kind, id) {
   };
 }
 
-function renderLegend() {
-  const el = document.getElementById("legend");
-  if (state.mode === "candidate") {
-    const [colA, colB] = duelColors();
-    if (state.candB) {
-      el.innerHTML = `
-        <span>${esc(shortName(state.candB.name))}</span>
-        <span class="gradient" style="background:linear-gradient(to right,
-          ${colB}, #ffffff, ${colA})"></span>
-        <span>${esc(shortName(state.candA.name))}</span>
-        <span class="legend-note">who's stronger where</span>`;
-    } else {
-      const max = maxShare(LAYERS[state.activeLayer].kind);
-      el.innerHTML = `
-        <span>0%</span>
-        <span class="gradient" style="background:linear-gradient(to right,
-          #ffffff, ${colA})"></span>
-        <span>${max ? (100 * max).toFixed(0) + "%" : ""}</span>
-        <span class="legend-note">${esc(shortName(state.candA.name))} vote share</span>`;
-    }
-    return;
-  }
-  if (state.colorBy === "margin") {
-    el.innerHTML = `
-      <span>R +50%</span>
-      <span class="gradient" style="background:linear-gradient(to right,
-        ${PARTY_COLORS.R}, #ffffff, ${PARTY_COLORS.DFL})"></span>
-      <span>DFL +50%</span>
-      <span class="legend-note">two-party margin, latest top-of-ticket race</span>`;
-    return;
-  }
-  const view = VIEWS[state.colorBy];
-  const range = viewRange(LAYERS[state.activeLayer].kind);
-  if (!range) { el.innerHTML = ""; return; }
-  el.innerHTML = `
+function overlayLegendHtml() {
+  if (!state.overlay) return "";
+  const view = VIEWS[state.overlay];
+  const range = viewRange(LAYERS[state.activeLayer].kind, state.overlay);
+  if (!range) return "";
+  return `<div class="legend-row">
     <span>${esc(view.format(range.min))}</span>
     <span class="gradient" style="background:linear-gradient(to right,
       ${view.lo}, ${view.hi})"></span>
     <span>${esc(view.format(range.max))}</span>
-    <span class="legend-note">${esc(view.label)}</span>`;
+    <span class="legend-note">overlay: ${esc(view.label.toLowerCase())}</span>
+  </div>`;
+}
+
+function renderLegend() {
+  const el = document.getElementById("legend");
+  if (state.split) {
+    el.innerHTML = `<div class="legend-row">
+      <span>R +50%</span>
+      <span class="gradient" style="background:linear-gradient(to right,
+        ${PARTY_COLORS.R}, #ffffff, ${PARTY_COLORS.DFL})"></span>
+      <span>DFL +50%</span>
+      <span class="legend-note">${esc(state.split.left)} (left) vs
+        ${esc(state.split.right)} (right) — drag the divider</span>
+    </div>` + overlayLegendHtml();
+    return;
+  }
+  if (state.mode === "candidate") {
+    const [colA, colB] = duelColors();
+    if (state.candB) {
+      el.innerHTML = `<div class="legend-row">
+        <span>${esc(shortName(state.candB.name))}</span>
+        <span class="gradient" style="background:linear-gradient(to right,
+          ${colB}, #ffffff, ${colA})"></span>
+        <span>${esc(shortName(state.candA.name))}</span>
+        <span class="legend-note">who's stronger where</span>
+      </div>` + overlayLegendHtml();
+    } else {
+      const max = maxShare(LAYERS[state.activeLayer].kind);
+      el.innerHTML = `<div class="legend-row">
+        <span>0%</span>
+        <span class="gradient" style="background:linear-gradient(to right,
+          #ffffff, ${colA})"></span>
+        <span>${max ? (100 * max).toFixed(0) + "%" : ""}</span>
+        <span class="legend-note">${esc(shortName(state.candA.name))} vote share</span>
+      </div>` + overlayLegendHtml();
+    }
+    return;
+  }
+  if (state.colorBy === "margin") {
+    el.innerHTML = `<div class="legend-row">
+      <span>R +50%</span>
+      <span class="gradient" style="background:linear-gradient(to right,
+        ${PARTY_COLORS.R}, #ffffff, ${PARTY_COLORS.DFL})"></span>
+      <span>DFL +50%</span>
+      <span class="legend-note">two-party margin, latest top-of-ticket race</span>
+    </div>` + overlayLegendHtml();
+    return;
+  }
+  const view = VIEWS[state.colorBy];
+  const range = viewRange(LAYERS[state.activeLayer].kind);
+  if (!range) { el.innerHTML = overlayLegendHtml(); return; }
+  el.innerHTML = `<div class="legend-row">
+    <span>${esc(view.format(range.min))}</span>
+    <span class="gradient" style="background:linear-gradient(to right,
+      ${view.lo}, ${view.hi})"></span>
+    <span>${esc(view.format(range.max))}</span>
+    <span class="legend-note">${esc(view.label)}</span>
+  </div>` + overlayLegendHtml();
 }
 
 /* ---------- side panel ---------- */
@@ -511,6 +589,7 @@ function duelColors() {
 }
 
 function enterCandidate(cand) {
+  if (state.split) exitSplit();
   state.mode = "candidate";
   state.candA = cand;
   state.candB = null;
@@ -728,6 +807,317 @@ function renderCandidatePanel() {
   if (ci) attachSearch(ci, document.getElementById("compare-results"),
     cand => { state.candB = cand; candidateModeChanged(); },
     compareSuggestions);
+}
+
+/* ---------- split-screen year comparison ---------- */
+
+function initSplitControl() {
+  const cycles = state.elections.cycles.map(c => c.id).sort();
+  for (const side of ["left", "right"]) {
+    const sel = document.getElementById(`split-${side}`);
+    sel.innerHTML = cycles.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+    sel.addEventListener("change", () => {
+      state.split[side] = sel.value;
+      rebuildSplitLayers();
+      renderLegend();
+    });
+  }
+
+  const handle = document.getElementById("split-handle");
+  const drag = e => {
+    const rect = document.getElementById("map").getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    state.split.t = Math.max(0.05, Math.min(0.95, x / rect.width));
+    updateSplitClip();
+  };
+  handle.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    state.map.dragging.disable();
+    const move = ev => state.split && drag(ev);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      state.map.dragging.enable();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  });
+
+  state.map.on("move zoom zoomend resize", updateSplitClip);
+}
+
+function toggleSplit() {
+  if (state.split) { exitSplit(); return; }
+  if (state.mode === "candidate") exitCandidateMode(true);
+  const cycles = state.elections.cycles.map(c => c.id).sort();
+  state.split = { left: cycles[0], right: cycles[cycles.length - 1], t: 0.5 };
+  document.getElementById("split-left").value = state.split.left;
+  document.getElementById("split-right").value = state.split.right;
+  document.getElementById("split-control").hidden = false;
+  document.getElementById("split-toggle").classList.add("active");
+  rebuildSplitLayers();
+  refreshStyles();
+  renderLegend();
+}
+
+function exitSplit() {
+  state.split = null;
+  rebuildSplitLayers();
+  document.getElementById("split-control").hidden = true;
+  document.getElementById("split-toggle").classList.remove("active");
+  refreshStyles();
+  renderLegend();
+}
+
+function rebuildSplitLayers() {
+  for (const side of ["left", "right"]) {
+    if (state.splitLayers[side]) {
+      state.map.removeLayer(state.splitLayers[side]);
+      state.splitLayers[side] = null;
+    }
+    if (!state.split) continue;
+    const kind = LAYERS[state.activeLayer].kind;
+    const cycleId = state.split[side];
+    state.splitLayers[side] = L.geoJSON(state.data[state.activeLayer], {
+      pane: side === "left" ? "splitLeft" : "splitRight",
+      interactive: false,
+      style: f => {
+        const m = cycleMargin(kind, f.properties.id, cycleId);
+        return m === null
+          ? { stroke: false, fillColor: "#d1d5db", fillOpacity: 0.25 }
+          : { stroke: false,
+              fillColor: divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, m / 0.5),
+              fillOpacity: 0.75 };
+      },
+    }).addTo(state.map);
+  }
+  updateSplitClip();
+}
+
+function updateSplitClip() {
+  if (!state.split) return;
+  const size = state.map.getSize();
+  const nw = state.map.containerPointToLayerPoint([0, 0]);
+  const se = state.map.containerPointToLayerPoint([size.x, size.y]);
+  const x = nw.x + (se.x - nw.x) * state.split.t;
+  const rect = (t, r, b, l) => `rect(${t}px, ${r}px, ${b}px, ${l}px)`;
+  state.map.getPane("splitLeft").style.clip = rect(nw.y, x, se.y, nw.x);
+  state.map.getPane("splitRight").style.clip = rect(nw.y, se.x, se.y, x);
+  const divider = document.getElementById("split-divider");
+  divider.style.left = (100 * state.split.t) + "%";
+  document.getElementById("split-handle")
+    .setAttribute("aria-valuenow", Math.round(100 * state.split.t));
+}
+
+/* ---------- demographic overlay ---------- */
+
+function setOverlay(name) {
+  state.overlay = name;
+  document.querySelectorAll("#layer-picker button[data-overlay]").forEach(b =>
+    b.classList.toggle("active", b.dataset.overlay === name));
+  rebuildOverlayLayer();
+  renderLegend();
+}
+
+function rebuildOverlayLayer() {
+  if (state.overlayLayer) {
+    state.map.removeLayer(state.overlayLayer);
+    state.overlayLayer = null;
+  }
+  if (!state.overlay) return;
+  const kind = LAYERS[state.activeLayer].kind;
+  const view = VIEWS[state.overlay];
+  const range = viewRange(kind, state.overlay);
+  if (!range) return;
+  state.overlayLayer = L.geoJSON(state.data[state.activeLayer], {
+    pane: "demoOverlay",
+    interactive: false,
+    style: f => {
+      const v = view.value(state.demographics.areas[kind]?.[f.properties.id]);
+      if (v == null) return { stroke: false, fillOpacity: 0 };
+      const t = range.max > range.min ? (v - range.min) / (range.max - range.min) : 0.5;
+      return { stroke: false, fillColor: lerpColor(view.lo, view.hi, t), fillOpacity: 0.45 };
+    },
+  }).addTo(state.map);
+}
+
+/* ---------- slide deck export ---------- */
+
+// Fill color for one area under the current view, at presentation strength
+// (no basemap, no translucency). Returns null for areas with no data.
+function exportFill(kind, id, cycleId) {
+  if (cycleId) {
+    const m = cycleMargin(kind, id, cycleId);
+    return m === null ? null : divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, m / 0.5);
+  }
+  if (state.mode === "candidate") {
+    const [colA, colB] = duelColors();
+    if (state.candB) {
+      const a = candStats(state.candA, kind, id);
+      const b = candStats(state.candB, kind, id);
+      if (!a && !b) return null;
+      const max = maxAbsDiff(kind) || 1;
+      return divergingColor(colB, colA, ((a?.share ?? 0) - (b?.share ?? 0)) / max);
+    }
+    const s = candStats(state.candA, kind, id);
+    if (!s) return null;
+    return lerpColor("#ffffff", colA, 0.08 + 0.92 * (s.share / (maxShare(kind) || 1)));
+  }
+  if (state.colorBy === "margin") {
+    const m = twoPartyMargin(kind, id);
+    return m === null ? null : divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, m / 0.5);
+  }
+  const view = VIEWS[state.colorBy];
+  const v = view.value(state.demographics.areas[kind]?.[id]);
+  const range = viewRange(kind);
+  if (v == null || !range) return null;
+  const t = range.max > range.min ? (v - range.min) / (range.max - range.min) : 0.5;
+  return lerpColor(view.lo, view.hi, t);
+}
+
+function exportTitle() {
+  if (state.mode === "candidate") {
+    return state.candB
+      ? `${shortName(state.candA.name)} vs ${shortName(state.candB.name)}`
+      : `${shortName(state.candA.name)} — vote share (${state.candA.cycle})`;
+  }
+  if (state.split) return `Vote margin: ${state.split.left} vs ${state.split.right}`;
+  return state.colorBy === "margin" ? "Vote margin" : VIEWS[state.colorBy].label;
+}
+
+function exportLegend(ctx, x, y, w) {
+  // Gradient bar + end labels matching the on-screen legend.
+  let from, to, mid = true, lo, hi;
+  if (state.mode === "candidate") {
+    const [colA, colB] = duelColors();
+    if (state.candB) {
+      from = colB; to = colA;
+      lo = shortName(state.candB.name); hi = shortName(state.candA.name);
+    } else {
+      from = "#ffffff"; to = colA; mid = false;
+      const max = maxShare(LAYERS[state.activeLayer].kind);
+      lo = "0%"; hi = max ? (100 * max).toFixed(0) + "%" : "";
+    }
+  } else if (state.colorBy === "margin" || state.split) {
+    from = PARTY_COLORS.R; to = PARTY_COLORS.DFL;
+    lo = "R +50%"; hi = "DFL +50%";
+  } else {
+    const view = VIEWS[state.colorBy];
+    const range = viewRange(LAYERS[state.activeLayer].kind);
+    from = view.lo; to = view.hi; mid = false;
+    lo = range ? view.format(range.min) : "";
+    hi = range ? view.format(range.max) : "";
+  }
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, from);
+  if (mid) grad.addColorStop(0.5, "#ffffff");
+  grad.addColorStop(1, to);
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = "#9ca3af";
+  ctx.lineWidth = 1;
+  ctx.fillRect(x, y, w, 22);
+  ctx.strokeRect(x, y, w, 22);
+  ctx.fillStyle = "#1f2937";
+  ctx.font = "600 26px -apple-system, 'Segoe UI', Arial, sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "right";
+  ctx.fillText(lo, x - 14, y + 11);
+  ctx.textAlign = "left";
+  ctx.fillText(hi, x + w + 14, y + 11);
+}
+
+function exportSlide() {
+  const kind = LAYERS[state.activeLayer].kind;
+  const W = 1920, H = 1080, footer = 130, pad = 40;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+
+  // Equirectangular projection (lat-corrected) fitted to the city bounds.
+  const coords = [];
+  const walk = g => (typeof g[0] === "number") ? coords.push(g) : g.forEach(walk);
+  state.data[state.activeLayer].features.forEach(f => walk(f.geometry.coordinates));
+  const lons = coords.map(c => c[0]), lats = coords.map(c => c[1]);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const kx = Math.cos((Math.PI / 180) * (minLat + maxLat) / 2);
+  const mapH = H - footer - 2 * pad - 70;       // room for title above
+  const mapW = W - 2 * pad;
+  const halves = state.split ? 2 : 1;
+  const scale = Math.min((mapW / halves - (halves - 1) * 30) / ((maxLon - minLon) * kx),
+                         mapH / (maxLat - minLat));
+  const drawW = (maxLon - minLon) * kx * scale, drawH = (maxLat - minLat) * scale;
+
+  const drawMap = (ox, cycleId) => {
+    const px = c => [ox + (c[0] - minLon) * kx * scale,
+                     pad + 110 + (maxLat - c[1]) * scale];
+    const tracePoly = poly => {
+      ctx.beginPath();
+      poly.forEach(ring => ring.forEach((c, i) => {
+        const [x, y] = px(c);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }));
+      ctx.closePath();
+    };
+    for (const f of state.data[state.activeLayer].features) {
+      const fill = exportFill(kind, f.properties.id, cycleId);
+      const polys = f.geometry.type === "Polygon"
+        ? [f.geometry.coordinates] : f.geometry.coordinates;
+      for (const poly of polys) {
+        tracePoly(poly);
+        ctx.fillStyle = fill ?? "#e5e7eb";
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+    }
+  };
+
+  if (state.split) {
+    const gap = 60;
+    const x0 = (W - 2 * drawW - gap) / 2;
+    ctx.font = "600 30px -apple-system, 'Segoe UI', Arial, sans-serif";
+    ctx.fillStyle = "#6b7280";
+    ctx.textAlign = "center";
+    for (const [i, side] of [["0", "left"], ["1", "right"]]) {
+      const ox = x0 + i * (drawW + gap);
+      drawMap(ox, state.split[side]);
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText(state.split[side], ox + drawW / 2, pad + 110 + drawH + 40);
+    }
+  } else {
+    drawMap((W - drawW) / 2, null);
+  }
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#111827";
+  ctx.font = "700 52px -apple-system, 'Segoe UI', Arial, sans-serif";
+  ctx.fillText(`Plymouth, MN — ${exportTitle()}`, pad + 20, pad + 50);
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "400 28px -apple-system, 'Segoe UI', Arial, sans-serif";
+  ctx.fillText(`By ${LAYERS[state.activeLayer].label.toLowerCase()}`, pad + 20, pad + 92);
+
+  exportLegend(ctx, W / 2 - 220, H - footer + 30, 440);
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "400 22px -apple-system, 'Segoe UI', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Data: MN Secretary of State · Hennepin County GIS · Census ACS",
+               W / 2, H - 28);
+
+  canvas.toBlob(blob => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `plymouth-${state.activeLayer}-${exportTitle()
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }, "image/png");
 }
 
 function esc(s) {

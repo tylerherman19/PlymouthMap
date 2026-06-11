@@ -276,13 +276,65 @@ body {
   padding: 6px 10px;
   font-size: 12px;
   display: flex;
-  align-items: center;
-  gap: 5px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
+.legend-row { display: flex; align-items: center; gap: 5px; }
 #legend .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 #legend .gradient { width: 90px; height: 10px; border-radius: 5px; display: inline-block; }
 #legend .legend-note { color: var(--muted); margin-left: 8px; }
 #legend:empty { display: none; }
+
+/* split-screen year comparison */
+#split-control {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 850;
+}
+#split-control[hidden] { display: none; }
+#split-divider {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 0;
+  z-index: 900;
+  border-left: 3px solid #111827;
+}
+#split-handle {
+  pointer-events: auto;
+  position: absolute;
+  top: 50%;
+  left: -19px;
+  width: 36px; height: 36px;
+  margin-top: -18px;
+  border-radius: 50%;
+  background: #111827;
+  color: #fff;
+  font-size: 16px;
+  line-height: 36px;
+  text-align: center;
+  cursor: ew-resize;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  touch-action: none;
+  user-select: none;
+}
+.split-year {
+  pointer-events: auto;
+  position: absolute;
+  top: 10px;
+  z-index: 900;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 72px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.95);
+}
+#split-left { left: 10px; }
+#split-right { right: 10px; }
 
 .ward-breakdown { margin: 6px 0 2px; }
 .ward-breakdown summary {
