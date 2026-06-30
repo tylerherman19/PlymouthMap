@@ -1,6 +1,5 @@
-/* Plymouth Votes — map-first civic data app.
- * Everything is static: GeoJSON layers + two JSON files produced by the
- * pipeline. No frameworks, just Leaflet and vanilla JS. */
+/* Plymouth Votes — campaign strategy tool for Clark Gregor for Mayor 2026.
+ * Static: GeoJSON layers + JSON produced by the pipeline. No frameworks, just Leaflet. */
 
 "use strict";
 
@@ -15,21 +14,31 @@ const LAYERS = {
 const PARTY_COLORS = { DFL: "#2166ac", R: "#b2182b", NP: "#0e7490", WI: "#d1d5db" };
 const OTHER_COLOR = "#9ca3af";
 
-// Demographic map views: how to read a value and how to paint it.
-const VIEWS = {
-  margin:    { label: "Vote margin" },
-  income:    { label: "Median household income", lo: "#edf8e9", hi: "#00541f",
-               value: d => d?.medianIncome, format: v => "$" + Math.round(v).toLocaleString("en-US") },
-  age:       { label: "Median age", lo: "#f2f0f7", hi: "#4a1486",
-               value: d => d?.medianAge, format: v => v.toFixed(1) + " yrs" },
-  diversity: { label: "Residents of color", lo: "#feedde", hi: "#8c2d04",
-               value: d => d && d.population ? (d.population - d.white) / d.population : null,
-               format: v => (100 * v).toFixed(0) + "%" },
-};
-
-// Distinct colors for head-to-head mode when both candidates share a party
-// color (e.g. two nonpartisan city candidates).
+// Distinct colors for head-to-head mode when both candidates share a party color.
 const DUEL_A = "#0e7490", DUEL_B = "#c2410c";
+
+// Campaign priority tiers based on 2024 DFL presidential share.
+// Plymouth is strongly DFL (57–70% across all precincts), so tiers are calibrated for that range.
+const PRIORITY_TIERS = [
+  { id: "strongbase", min: 0.65, label: "Strong DFL Base", action: "Maximum GOTV",       mapColor: "#15803d", bg: "#dcfce7", textColor: "#14532d" },
+  { id: "base",       min: 0.60, label: "DFL Base",        action: "GOTV + Canvass",     mapColor: "#4ade80", bg: "#bbf7d0", textColor: "#14532d" },
+  { id: "lean",       min: 0.55, label: "Lean DFL",        action: "Canvass + Persuade", mapColor: "#f59e0b", bg: "#fef3c7", textColor: "#78350f" },
+  { id: "swing",      min: 0.00, label: "Swing",           action: "Active Persuasion",  mapColor: "#ef4444", bg: "#fee2e2", textColor: "#7f1d1d" },
+];
+
+const VIEWS = {
+  margin:     { label: "Vote margin" },
+  priority:   { label: "Campaign priority" },
+  engagement: { label: "Local election engagement", lo: "#fdba74", hi: "#1e3a8a",
+                format: v => (100 * v).toFixed(0) + "%" },
+  income:     { label: "Median household income", lo: "#edf8e9", hi: "#00541f",
+                value: d => d?.medianIncome, format: v => "$" + Math.round(v).toLocaleString("en-US") },
+  age:        { label: "Median age", lo: "#f2f0f7", hi: "#4a1486",
+                value: d => d?.medianAge, format: v => v.toFixed(1) + " yrs" },
+  diversity:  { label: "Residents of color", lo: "#feedde", hi: "#8c2d04",
+                value: d => d && d.population ? (d.population - d.white) / d.population : null,
+                format: v => (100 * v).toFixed(0) + "%" },
+};
 
 const state = {
   map: null,
@@ -37,7 +46,7 @@ const state = {
   elections: null,
   demographics: null,
   activeLayer: "precincts",
-  colorBy: "margin",
+  colorBy: "priority",   // default to campaign priority view
   leafletLayer: null,
   selectedId: null,
   mode: "area",      // "area" | "candidate"
@@ -50,6 +59,45 @@ const state = {
   overlayLayer: null,
 };
 
+/* --------- campaign data helpers --------- */
+
+function dflShare(kind, id) {
+  const races = state.elections.results[kind]?.[id]?.["2024"];
+  const pres = races?.find(r => r.office.startsWith("U.S. President"));
+  if (!pres) return null;
+  let dfl = 0, total = 0;
+  pres.candidates.forEach(c => {
+    if (c.party !== "WI") total += c.votes;
+    if (c.party === "DFL") dfl += c.votes;
+  });
+  return total > 0 ? dfl / total : null;
+}
+
+function priorityTierFor(kind, id) {
+  const share = dflShare(kind, id);
+  if (share === null) return null;
+  return PRIORITY_TIERS.find(t => share >= t.min) ?? PRIORITY_TIERS[PRIORITY_TIERS.length - 1];
+}
+
+function clarkStats2022(kind, id) {
+  const races = state.elections.results[kind]?.[id]?.["2022"];
+  const race = races?.find(r => r.office === "Council Member at Large (Plymouth)");
+  if (!race) return null;
+  const c = race.candidates.find(c => c.name.includes("Gregor"));
+  if (!c) return null;
+  return { votes: c.votes, total: race.total, share: c.votes / race.total };
+}
+
+function engagementRatio(kind, id) {
+  const r2022 = state.elections.results[kind]?.[id]?.["2022"];
+  const mayor = r2022?.find(r => r.office === "Mayor (Plymouth)");
+  const congress = r2022?.find(r => r.office.startsWith("U.S. Representative"));
+  if (!mayor || !congress || !congress.total) return null;
+  return mayor.total / congress.total;
+}
+
+/* --------- init --------- */
+
 init();
 
 async function init() {
@@ -60,8 +108,6 @@ async function init() {
     maxZoom: 17,
   }).addTo(state.map);
 
-  // Custom panes: the year-comparison halves sit just under the interactive
-  // layer; the demographic overlay multiplies on top of it.
   for (const name of ["splitLeft", "splitRight"]) {
     state.map.createPane(name).style.zIndex = 380;
   }
@@ -104,24 +150,33 @@ async function init() {
       renderLegend();
     });
   });
+
   // The panel re-renders constantly, so handle its links by delegation.
   document.getElementById("panel-content").addEventListener("click", e => {
     const a = e.target.closest("a");
-    if (!a) return;
-    if (a.id === "citywide-link") {
-      e.preventDefault();
-      state.selectedId = null;
-      refreshStyles();
-      renderPanel("city", "plymouth", { name: "City of Plymouth" });
-    } else if (a.id === "exit-candidate") {
-      e.preventDefault();
-      exitCandidateMode(true);
-    } else if (a.id === "remove-candB") {
-      e.preventDefault();
-      state.candB = null;
-      candidateModeChanged();
+    if (a) {
+      if (a.id === "citywide-link") {
+        e.preventDefault();
+        state.selectedId = null;
+        refreshStyles();
+        renderPanel("city", "plymouth", { name: "City of Plymouth" });
+      } else if (a.id === "exit-candidate") {
+        e.preventDefault();
+        exitCandidateMode(true);
+      } else if (a.id === "remove-candB") {
+        e.preventDefault();
+        state.candB = null;
+        candidateModeChanged();
+      }
+    }
+    // Clark quick-launch button in campaign home panel
+    const btn = e.target.closest("button");
+    if (btn && btn.id === "clark-btn") {
+      const clark = state.candidateIndex.find(c => c.name.includes("Gregor") && c.cycle === "2022");
+      if (clark) enterCandidate(clark);
     }
   });
+
   attachSearch(document.getElementById("cand-input"),
                document.getElementById("cand-results"),
                cand => enterCandidate(cand));
@@ -134,7 +189,102 @@ async function init() {
   document.getElementById("export-btn").addEventListener("click", exportSlide);
   initSplitControl();
 
+  // Clark's Map button in topbar
+  const clarkTopBtn = document.getElementById("topbar-clark-btn");
+  if (clarkTopBtn) {
+    clarkTopBtn.addEventListener("click", () => {
+      const clark = state.candidateIndex.find(c => c.name.includes("Gregor") && c.cycle === "2022");
+      if (clark) enterCandidate(clark);
+    });
+  }
+
+  // Mark priority as active by default
+  document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === "priority"));
+
   setLayer("precincts");
+  renderCampaignHome();
+}
+
+/* --------- campaign home panel --------- */
+
+function renderCampaignHome() {
+  const kind = "precinct";
+  const precinctIds = state.data.precincts?.features.map(f => f.properties.id) ?? [];
+
+  // Aggregate priority tier stats
+  const tierStats = {};
+  PRIORITY_TIERS.forEach(t => { tierStats[t.id] = { count: 0 }; });
+  for (const id of precinctIds) {
+    const tier = priorityTierFor(kind, id);
+    if (tier) tierStats[tier.id].count++;
+  }
+
+  // Citywide DFL share
+  const cityShare = dflShare("city", "plymouth");
+  const clarkCity = clarkStats2022("city", "plymouth");
+
+  // Wosje 2022 mayor total (uncontested)
+  const mayorRace = state.elections.results.city?.plymouth?.["2022"]?.find(r => r.office === "Mayor (Plymouth)");
+  const wosjeTotal = mayorRace ? fmt(mayorRace.total) : "27,411";
+
+  const tierRows = PRIORITY_TIERS.map(t => {
+    const count = tierStats[t.id]?.count ?? 0;
+    if (count === 0) return "";
+    return `<div class="tier-row">
+      <span class="tier-dot" style="background:${t.mapColor}"></span>
+      <span class="tier-row-label">${esc(t.label)}</span>
+      <span class="tier-row-count">${count} precinct${count !== 1 ? "s" : ""}</span>
+      <span class="tier-row-action">${esc(t.action)}</span>
+    </div>`;
+  }).join("");
+
+  document.getElementById("panel-content").innerHTML = `
+    <div class="campaign-home">
+      <div style="margin-bottom:12px">
+        <div class="race-badge">2026 Mayor's Race</div>
+        <div class="candidate-matchup">
+          <span class="cand-clark">Clark Gregor</span>
+          <span class="cand-vs">vs.</span>
+          <span class="cand-wosje">Jeff Wosje</span>
+        </div>
+        <p class="race-context">Wosje is the incumbent (ran uncontested in 2022). Clark won council at-large 2022.</p>
+      </div>
+
+      <h3 class="section-title">The lay of the land</h3>
+      <div class="demo-grid" style="margin-bottom:12px">
+        <div class="demo-stat">
+          <div class="v">${cityShare !== null ? (100 * cityShare).toFixed(1) + "%" : "62.5%"}</div>
+          <div class="k">DFL lean (2024 presidential)</div>
+        </div>
+        <div class="demo-stat">
+          <div class="v">${clarkCity ? fmt(clarkCity.votes) : "12,018"}</div>
+          <div class="k">Clark's 2022 council votes</div>
+        </div>
+        <div class="demo-stat">
+          <div class="v">${clarkCity ? pct(clarkCity.votes, clarkCity.total) : "41.2%"}</div>
+          <div class="k">Clark's share (3-way race)</div>
+        </div>
+        <div class="demo-stat">
+          <div class="v">${wosjeTotal}</div>
+          <div class="k">2022 mayor race total votes</div>
+        </div>
+      </div>
+
+      <div class="win-scenario">
+        <strong>Win scenario:</strong> Wosje ran uncontested in 2022 — no head-to-head baseline exists. In a 2-candidate race, Clark needs <strong>50%+ of turnout</strong>. If ~28,000 votes are cast, the win number is ~<strong>14,000</strong>. Clark's 2022 council coalition (41% in a 3-way race) extrapolates to ~11,500. He needs ~2,500 more from Wosje soft support and new voters.
+      </div>
+
+      <h3 class="section-title">Precinct priorities</h3>
+      <div class="tier-legend">${tierRows}</div>
+
+      <div class="home-actions">
+        <button id="clark-btn" class="action-btn">Map Clark's 2022 Base →</button>
+        <a href="#" id="citywide-link" class="action-link">View full citywide results →</a>
+      </div>
+
+      <p class="fineprint">Click any precinct on the map for campaign context and a recommended action. Use "Priority" in the Color by toolbar to see the priority map, or "Engagement" to find precincts with latent voters.</p>
+    </div>`;
 }
 
 /* ---------- map rendering ---------- */
@@ -143,7 +293,7 @@ function setLayer(name) {
   state.activeLayer = name;
   state.selectedId = null;
   document.querySelectorAll("#layer-picker button").forEach(b =>
-    b.classList.toggle("active", b.dataset.layer === name));
+    b.classList.toggle("active", b.dataset.layer === name || b.dataset.view === state.colorBy));
 
   if (state.leafletLayer) state.map.removeLayer(state.leafletLayer);
   const kind = LAYERS[name].kind;
@@ -181,7 +331,19 @@ function tooltipFor(kind, props) {
     }
     return html;
   }
-  if (state.mode !== "candidate") return esc(props.name);
+  if (state.mode !== "candidate") {
+    let html = `<b>${esc(props.name)}</b>`;
+    if (state.colorBy === "priority" && kind === "precinct") {
+      const tier = priorityTierFor(kind, props.id);
+      if (tier) html += `<br>${esc(tier.label)} — ${esc(tier.action)}`;
+      const share = dflShare(kind, props.id);
+      if (share !== null) html += `<br>${(100 * share).toFixed(1)}% DFL lean`;
+    } else if (state.colorBy === "engagement") {
+      const ratio = engagementRatio(kind, props.id);
+      if (ratio !== null) html += `<br>${(100 * ratio).toFixed(0)}% local turnout rate`;
+    }
+    return html;
+  }
   let html = `<b>${esc(props.name)}</b>`;
   for (const cand of [state.candA, state.candB]) {
     if (!cand) continue;
@@ -199,8 +361,6 @@ function refreshStyles() {
 }
 
 function cycleMargin(kind, id, cycleId) {
-  // DFL minus GOP share of the two-party vote in the top-of-ticket race of
-  // one election cycle (president if on the ballot, else the first race).
   const races = state.elections.results[kind]?.[id]?.[cycleId];
   if (!races) return null;
   const race = races.find(r => r.office.startsWith("U.S. President")) || races[0];
@@ -214,7 +374,6 @@ function cycleMargin(kind, id, cycleId) {
 }
 
 function twoPartyMargin(kind, id) {
-  // Same, in the most recent cycle with results for this area.
   for (const cycle of state.elections.cycles) {
     const m = cycleMargin(kind, id, cycle.id);
     if (m !== null) return m;
@@ -223,8 +382,8 @@ function twoPartyMargin(kind, id) {
 }
 
 function viewRange(kind, viewName = state.colorBy) {
-  // min/max of a demographic across the active layer's areas
   const view = VIEWS[viewName];
+  if (!view || !view.value) return null;
   const values = state.data[state.activeLayer].features
     .map(f => view.value(state.demographics.areas[kind]?.[f.properties.id]))
     .filter(v => v != null);
@@ -238,8 +397,6 @@ function lerpColor(a, b, t) {
   return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
 }
 
-// Diverging gradient: t in [-1, 1]; negative pulls toward colNeg, positive
-// toward colPos, through white at zero — the classic election-map ramp.
 function divergingColor(colNeg, colPos, t) {
   t = Math.max(-1, Math.min(1, t));
   return t >= 0 ? lerpColor("#ffffff", colPos, 0.08 + 0.92 * t)
@@ -251,8 +408,6 @@ function styleFor(kind, id) {
   let fill = "#d1d5db", opacity = 0.35;
 
   if (state.split) {
-    // The two split panes underneath carry the colors; the interactive
-    // layer only draws borders and the selection outline.
     return {
       color: selected ? "#111827" : "#ffffff",
       weight: selected ? 3 : 1.4,
@@ -278,24 +433,35 @@ function styleFor(kind, id) {
         fill = lerpColor("#ffffff", colA, 0.08 + 0.92 * (s.share / max));
         opacity = 0.7;
       } else {
-        opacity = 0.15;  // not on the ballot here
+        opacity = 0.15;
       }
+    }
+  } else if (state.colorBy === "priority") {
+    const tier = priorityTierFor(kind, id);
+    if (tier) { fill = tier.mapColor; opacity = 0.75; }
+  } else if (state.colorBy === "engagement") {
+    const ratio = engagementRatio(kind, id);
+    if (ratio !== null) {
+      const t = Math.max(0, Math.min(1, (ratio - 0.58) / 0.18)); // 58%–76% range
+      fill = lerpColor("#fdba74", "#1e3a8a", t);
+      opacity = 0.75;
     }
   } else if (state.colorBy === "margin") {
     const margin = twoPartyMargin(kind, id);
     if (margin !== null) {
-      // ±50 % two-party margin saturates the red-blue gradient
       fill = divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, margin / 0.5);
       opacity = 0.7;
     }
   } else {
     const view = VIEWS[state.colorBy];
-    const v = view.value(state.demographics.areas[kind]?.[id]);
-    const range = viewRange(kind);
-    if (v != null && range) {
-      const t = range.max > range.min ? (v - range.min) / (range.max - range.min) : 0.5;
-      fill = lerpColor(view.lo, view.hi, t);
-      opacity = 0.65;
+    if (view && view.value) {
+      const v = view.value(state.demographics.areas[kind]?.[id]);
+      const range = viewRange(kind);
+      if (v != null && range) {
+        const t = range.max > range.min ? (v - range.min) / (range.max - range.min) : 0.5;
+        fill = lerpColor(view.lo, view.hi, t);
+        opacity = 0.65;
+      }
     }
   }
   return {
@@ -348,11 +514,31 @@ function renderLegend() {
       el.innerHTML = `<div class="legend-row">
         <span>0%</span>
         <span class="gradient" style="background:linear-gradient(to right,
-          #ffffff, ${colA})"></span>
+          #ffffff, ${duelColors()[0]})"></span>
         <span>${max ? (100 * max).toFixed(0) + "%" : ""}</span>
         <span class="legend-note">${esc(shortName(state.candA.name))} vote share</span>
       </div>` + overlayLegendHtml();
     }
+    return;
+  }
+  if (state.colorBy === "priority") {
+    const swatches = PRIORITY_TIERS.map(t =>
+      `<div class="legend-priority-row">
+        <span class="swatch" style="background:${t.mapColor}"></span>
+        <span>${esc(t.label)}</span>
+        <span class="tier-action-small">— ${esc(t.action)}</span>
+      </div>`).join("");
+    el.innerHTML = `<div class="legend-priority">${swatches}</div>` + overlayLegendHtml();
+    return;
+  }
+  if (state.colorBy === "engagement") {
+    el.innerHTML = `<div class="legend-row">
+      <span>Low turnout</span>
+      <span class="gradient" style="background:linear-gradient(to right,
+        #fdba74, #1e3a8a)"></span>
+      <span>High turnout</span>
+      <span class="legend-note">2022 local election engagement vs. congressional</span>
+    </div>` + overlayLegendHtml();
     return;
   }
   if (state.colorBy === "margin") {
@@ -394,10 +580,15 @@ function renderPanel(kind, id, props) {
     sub = "All Plymouth precincts combined";
   }
 
+  const campCtx = kind === "precinct" ? campaignContextHtml(kind, id) : "";
+  const cityCtx = kind === "city" ? citywideContextHtml() : "";
+
   el.innerHTML = `
     <p class="area-kicker">${esc(kindLabel(kind))}</p>
     <h2 class="area-name">${esc(props.name)}</h2>
     <p class="area-sub">${esc(sub)}</p>
+    ${campCtx}
+    ${cityCtx}
     ${demographicsHtml(demo, kind)}
     ${electionsHtml(unit)}
     <p class="fineprint">Demographics are area-weighted estimates from the
@@ -413,6 +604,62 @@ function renderPanel(kind, id, props) {
         .forEach(r => r.classList.remove("hidden-cand"));
       btn.remove();
     }));
+}
+
+function campaignContextHtml(kind, id) {
+  const tier = priorityTierFor(kind, id);
+  const share = dflShare(kind, id);
+  const clark = clarkStats2022(kind, id);
+  const engagement = engagementRatio(kind, id);
+
+  if (!tier && !clark) return "";
+
+  // Narrative story — most specific case first. The aim is for the sentence
+  // to match the tier's recommended action, not contradict it.
+  const cShare = clark ? clark.share : null;
+  let story = "Solid DFL base. Standard canvass and GOTV applies.";
+  if (cShare !== null && cShare >= 0.48) {
+    story = "One of Clark's strongest precincts — anchor the base and max out turnout here.";
+  } else if (share !== null && share < 0.55) {
+    story = "Swing-leaning precinct — persuasion matters as much as turnout. Door-knock and ID first.";
+  } else if (share !== null && share < 0.60) {
+    story = cShare !== null && cShare < 0.38
+      ? "Less reliably DFL and Clark underperformed here in 2022 — a top persuasion target."
+      : "Less reliably DFL — pair canvassing with persuasion messaging.";
+  } else if (cShare !== null && cShare < 0.36 && share !== null && share >= 0.55) {
+    story = "Clark underperformed the DFL lean here in 2022 — high-value outreach and persuasion target.";
+  } else if (share !== null && share >= 0.65 && cShare !== null && cShare < 0.40) {
+    story = "Strong DFL neighborhood where Clark has room to grow — top GOTV target.";
+  } else if (cShare !== null && cShare >= 0.40) {
+    story = "Clark ran well here in 2022. Reliable base — prioritize GOTV.";
+  }
+
+  return `<div class="campaign-context" style="background:${tier?.bg ?? "#f9fafb"};border:1px solid ${tier?.mapColor ?? "#e5e7eb"}">
+    <div class="campaign-tier-badge" style="color:${tier?.textColor ?? "#374151"}">
+      <span style="width:10px;height:10px;border-radius:50%;background:${tier?.mapColor ?? "#9ca3af"};flex:none;display:inline-block"></span>
+      ${esc(tier?.label ?? "No data")} — ${esc(tier?.action ?? "")}
+    </div>
+    <div class="campaign-stats">
+      ${share !== null ? `<span><span>DFL lean (2024)</span><b>${(100 * share).toFixed(1)}%</b></span>` : ""}
+      ${clark ? `<span><span>Clark's 2022 council</span><b>${fmt(clark.votes)} votes (${pct(clark.votes, clark.total)} of race)</b></span>` : ""}
+      ${engagement !== null ? `<span><span>2022 local turnout rate</span><b>${(100 * engagement).toFixed(0)}% of congressional</b></span>` : ""}
+    </div>
+    <p class="campaign-story">${esc(story)}</p>
+  </div>`;
+}
+
+function citywideContextHtml() {
+  const clarkCity = clarkStats2022("city", "plymouth");
+  const mayorRace = state.elections.results.city?.plymouth?.["2022"]?.find(r => r.office === "Mayor (Plymouth)");
+  const share = dflShare("city", "plymouth");
+  if (!clarkCity && !mayorRace) return "";
+  return `<div class="win-scenario" style="margin-bottom:14px">
+    <strong>2026 Campaign context:</strong>
+    Plymouth voted <strong>${share !== null ? (100*share).toFixed(1)+"%" : "62.5%"} DFL</strong> in 2024.
+    Clark won council at-large in 2022 with <strong>${clarkCity ? fmt(clarkCity.votes) : "12,018"} votes (${clarkCity ? pct(clarkCity.votes, clarkCity.total) : "41.2%"})</strong> in a 3-way race.
+    Wosje ran uncontested for mayor — his <strong>${mayorRace ? fmt(mayorRace.total) : "27,411"}</strong> total reflects no opposition.
+    In a head-to-head 2026 race, the win number is roughly <strong>14,000 votes</strong>.
+  </div>`;
 }
 
 function kindLabel(kind) {
@@ -458,20 +705,16 @@ function electionsHtml(unit) {
 }
 
 function shortName(name) {
-  // "Kamala D. Harris and Tim Walz" -> "Kamala D. Harris" (ticket races)
   return name.split(" and ")[0];
 }
 
 function wardBreakdownHtml(race, cycleId) {
-  // Same office, same cycle, looked up in each ward's aggregated results.
   const wardResults = state.elections.results.ward;
   const wards = Object.keys(wardResults).sort().filter(w =>
     wardResults[w][cycleId]?.some(r => r.office === race.office));
   if (!wards.length) return "";
 
   const wardRace = w => wardResults[w][cycleId].find(r => r.office === race.office);
-  // Candidate order follows the selected area's race; add any candidates
-  // that only appear in some wards.
   const names = race.candidates.map(c => c.name);
   wards.forEach(w => wardRace(w).candidates.forEach(c => {
     if (!names.includes(c.name)) names.push(c.name);
@@ -527,7 +770,6 @@ function raceHtml(race, cycleId) {
 /* ---------- candidate explorer ---------- */
 
 function buildCandidateIndex() {
-  // One entry per (cycle, office, candidate), from citywide results.
   const out = [];
   const cityRaces = state.elections.results.city.plymouth;
   for (const cycle of state.elections.cycles) {
@@ -547,7 +789,6 @@ function buildCandidateIndex() {
 }
 
 function candStats(cand, kind, id) {
-  // The candidate's votes and share of their own race in one map area.
   const races = state.elections.results[kind]?.[id]?.[cand.cycle];
   const race = races?.find(r => r.office === cand.office);
   if (!race || !race.total) return null;
@@ -604,13 +845,7 @@ function exitCandidateMode(rerender) {
   if (rerender) {
     refreshStyles();
     renderLegend();
-    document.getElementById("panel-content").innerHTML = `
-      <div class="panel-empty">
-        <h2>Explore the map</h2>
-        <p>Click any area of Plymouth to see how it votes and who lives
-           there — or search a candidate above to map their performance.</p>
-        <p><a href="#" id="citywide-link">View citywide results →</a></p>
-      </div>`;
+    renderCampaignHome();
   }
 }
 
@@ -632,7 +867,7 @@ function attachSearch(input, resultsEl, onPick, getSuggestions) {
       </button>`).join("");
     resultsEl.hidden = false;
     resultsEl.querySelectorAll("button").forEach(btn =>
-      btn.addEventListener("mousedown", e => {  // mousedown beats input blur
+      btn.addEventListener("mousedown", e => {
         e.preventDefault();
         close();
         onPick(items[+btn.dataset.i]);
@@ -672,7 +907,6 @@ function compareSuggestions() {
 }
 
 function rankedUnits(kind) {
-  // Areas ranked by candidate A's share (or A−B diff in compare mode).
   const rows = [];
   for (const p of activeUnits()) {
     const a = candStats(state.candA, kind, p.id);
@@ -743,8 +977,6 @@ function bestWorstHtml(kind) {
   const aName = shortName(state.candA.name);
   let titleTop, titleBot, flipBottom = false;
   if (state.candB) {
-    // If B never actually leads anywhere, the bottom list is A's closest
-    // areas, not B's strongholds — label it honestly.
     flipBottom = ranked[ranked.length - 1].sort < 0;
     titleTop = `Best for ${aName}`;
     titleBot = flipBottom
@@ -944,8 +1176,6 @@ function rebuildOverlayLayer() {
 
 /* ---------- slide deck export ---------- */
 
-// Fill color for one area under the current view, at presentation strength
-// (no basemap, no translucency). Returns null for areas with no data.
 function exportFill(kind, id, cycleId) {
   if (cycleId) {
     const m = cycleMargin(kind, id, cycleId);
@@ -964,11 +1194,22 @@ function exportFill(kind, id, cycleId) {
     if (!s) return null;
     return lerpColor("#ffffff", colA, 0.08 + 0.92 * (s.share / (maxShare(kind) || 1)));
   }
+  if (state.colorBy === "priority") {
+    const tier = priorityTierFor(kind, id);
+    return tier ? tier.mapColor : null;
+  }
+  if (state.colorBy === "engagement") {
+    const ratio = engagementRatio(kind, id);
+    if (ratio === null) return null;
+    const t = Math.max(0, Math.min(1, (ratio - 0.58) / 0.18));
+    return lerpColor("#fdba74", "#1e3a8a", t);
+  }
   if (state.colorBy === "margin") {
     const m = twoPartyMargin(kind, id);
     return m === null ? null : divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, m / 0.5);
   }
   const view = VIEWS[state.colorBy];
+  if (!view || !view.value) return null;
   const v = view.value(state.demographics.areas[kind]?.[id]);
   const range = viewRange(kind);
   if (v == null || !range) return null;
@@ -983,11 +1224,12 @@ function exportTitle() {
       : `${shortName(state.candA.name)} — vote share (${state.candA.cycle})`;
   }
   if (state.split) return `Vote margin: ${state.split.left} vs ${state.split.right}`;
+  if (state.colorBy === "priority") return "Campaign Priority Map";
+  if (state.colorBy === "engagement") return "Local Election Engagement";
   return state.colorBy === "margin" ? "Vote margin" : VIEWS[state.colorBy].label;
 }
 
 function exportLegend(ctx, x, y, w) {
-  // Gradient bar + end labels matching the on-screen legend.
   let from, to, mid = true, lo, hi;
   if (state.mode === "candidate") {
     const [colA, colB] = duelColors();
@@ -999,6 +1241,22 @@ function exportLegend(ctx, x, y, w) {
       const max = maxShare(LAYERS[state.activeLayer].kind);
       lo = "0%"; hi = max ? (100 * max).toFixed(0) + "%" : "";
     }
+  } else if (state.colorBy === "priority") {
+    // Draw discrete swatches instead of gradient
+    const tileW = w / PRIORITY_TIERS.length;
+    PRIORITY_TIERS.forEach((t, i) => {
+      ctx.fillStyle = t.mapColor;
+      ctx.fillRect(x + i * tileW, y, tileW, 22);
+      ctx.fillStyle = "#fff";
+      ctx.font = "500 18px -apple-system, 'Segoe UI', Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(t.label, x + i * tileW + tileW / 2, y + 11);
+    });
+    return;
+  } else if (state.colorBy === "engagement") {
+    from = "#fdba74"; to = "#1e3a8a"; mid = false;
+    lo = "Low engagement"; hi = "High engagement";
   } else if (state.colorBy === "margin" || state.split) {
     from = PARTY_COLORS.R; to = PARTY_COLORS.DFL;
     lo = "R +50%"; hi = "DFL +50%";
@@ -1037,7 +1295,6 @@ function exportSlide() {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
-  // Equirectangular projection (lat-corrected) fitted to the city bounds.
   const coords = [];
   const walk = g => (typeof g[0] === "number") ? coords.push(g) : g.forEach(walk);
   state.data[state.activeLayer].features.forEach(f => walk(f.geometry.coordinates));
@@ -1045,7 +1302,7 @@ function exportSlide() {
   const minLon = Math.min(...lons), maxLon = Math.max(...lons);
   const minLat = Math.min(...lats), maxLat = Math.max(...lats);
   const kx = Math.cos((Math.PI / 180) * (minLat + maxLat) / 2);
-  const mapH = H - footer - 2 * pad - 70;       // room for title above
+  const mapH = H - footer - 2 * pad - 70;
   const mapW = W - 2 * pad;
   const halves = state.split ? 2 : 1;
   const scale = Math.min((mapW / halves - (halves - 1) * 30) / ((maxLon - minLon) * kx),

@@ -410,6 +410,13 @@ body {
     padding: 5px 8px;
   }
   #legend .legend-note { display: none; }
+  /* Keep the priority legend compact on the short mobile map: drop the
+     action text and let the tier labels sit on one line each. */
+  #legend .tier-action-small { display: none; }
+  #legend .legend-priority-row { white-space: nowrap; }
+  #legend { max-width: 60%; }
+  .candidate-matchup { font-size: 18px; }
+  .tier-row-label { min-width: 96px; }
   #credits { display: none; }
   .demo-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px 10px; }
   .demo-stat .v { font-size: 16px; }
@@ -419,3 +426,104 @@ body {
   #cand-results { left: 14px; right: 14px; }
   .bw-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---- Campaign home panel ---- */
+.race-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: #1e3a8a;
+  color: #fff;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+.candidate-matchup {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 4px 0 2px;
+  line-height: 1.2;
+}
+.cand-clark { color: #1e3a8a; white-space: nowrap; }
+.cand-vs { font-size: 14px; color: var(--muted); margin: 0 6px; }
+.cand-wosje { white-space: nowrap; }
+.cand-wosje { color: #7f1d1d; }
+.race-context { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+
+/* Win scenario callout */
+.win-scenario {
+  background: #f0f9ff;
+  border-left: 3px solid #0ea5e9;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.win-scenario strong { color: #0c4a6e; }
+
+/* Priority tier rows in home panel */
+.tier-legend { display: flex; flex-direction: column; gap: 5px; margin: 6px 0 12px; }
+.tier-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.tier-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.tier-row-label { font-weight: 600; flex: none; min-width: 120px; }
+.tier-row-count { color: var(--muted); font-size: 12px; flex: none; }
+.tier-row-action { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+
+/* Campaign context box in precinct panel */
+.campaign-context {
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.campaign-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.campaign-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+.campaign-stats span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.campaign-stats span b { flex: none; font-weight: 600; }
+.campaign-story { font-size: 12.5px; font-style: italic; margin: 0; line-height: 1.45; }
+
+/* Priority swatches in map legend */
+.legend-priority { display: flex; flex-direction: column; gap: 4px; }
+.legend-priority-row { display: flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.legend-priority-row .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.tier-action-small { color: var(--muted); font-size: 10.5px; }
+
+/* Home action buttons */
+.home-actions { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+.action-btn {
+  width: 100%;
+  padding: 10px 14px;
+  background: #1e3a8a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.action-btn:hover { background: #1e40af; }
+.action-link { font-size: 13px; color: var(--dfl); text-decoration: none; display: block; }
+.action-link:hover { text-decoration: underline; }

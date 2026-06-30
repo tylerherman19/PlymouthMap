@@ -23,7 +23,9 @@
     <button data-layer="senate">MN Senate</button>
     <button data-layer="congress">U.S. House</button>
     <span class="picker-label picker-gap">Color by</span>
-    <button data-view="margin" class="active view-btn">Vote margin</button>
+    <button data-view="priority" class="active view-btn">Priority</button>
+    <button data-view="margin" class="view-btn">Vote margin</button>
+    <button data-view="engagement" class="view-btn">Engagement</button>
     <button data-view="income" class="view-btn">Income</button>
     <button data-view="age" class="view-btn">Age</button>
     <button data-view="diversity" class="view-btn">Diversity</button>
@@ -32,6 +34,7 @@
     <button data-overlay="age" class="overlay-btn">Age</button>
     <button data-overlay="diversity" class="overlay-btn">Diversity</button>
     <span class="picker-gap"></span>
+    <button id="topbar-clark-btn" title="Map Clark Gregor's 2022 precinct performance">Clark's Map</button>
     <button id="split-toggle" title="Side-by-side comparison of two election years">Compare years</button>
     <button id="export-btn" title="Download a clean, presentation-ready map graphic">Export slide</button>
   </nav>
@@ -56,14 +59,7 @@
     </div>
     <div id="panel-content">
       <div class="panel-empty">
-        <h2>Explore the map</h2>
-        <p>Click any area of Plymouth to see how it votes and who lives
-           there. Use the buttons above the map to switch between
-           precincts, city wards, and legislative districts.</p>
-        <p>Or <b>search a candidate above</b> to map where they ran strong
-           or weak — and compare them head-to-head against any other
-           candidate over the same geography.</p>
-        <p><a href="#" id="citywide-link">View citywide results →</a></p>
+        <h2>Loading…</h2>
       </div>
     </div>
   </aside>
