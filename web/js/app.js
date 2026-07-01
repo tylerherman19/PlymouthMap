@@ -77,6 +77,25 @@ const SCENARIO_BASELINES = {
   pres2020: { cycle: "2020", label: "2020 President", match: o => o.startsWith("U.S. President") },
 };
 
+// One-tap starting points. Each fully specifies the model inputs.
+const SCENARIO_PRESETS = [
+  { id: "midterm", label: "2022 midterm",
+    desc: "Midterm turnout, neutral environment",
+    v: { baseline: "gov2022", turnoutPct: 0.73, swing: 0, pocSurge: 0, pocLean: 0.60 } },
+  { id: "presidential", label: "Presidential-year turnout",
+    desc: "High turnout like a presidential cycle",
+    v: { baseline: "pres2024", turnoutPct: 0.85, swing: 0, pocSurge: 0, pocLean: 0.60 } },
+  { id: "redwave", label: "Red wave",
+    desc: "R environment, midterm turnout",
+    v: { baseline: "gov2022", turnoutPct: 0.73, swing: -0.08, pocSurge: 0, pocLean: 0.60 } },
+  { id: "coalition", label: "Coalition surge",
+    desc: "Higher turnout, voters-of-color surge",
+    v: { baseline: "gov2022", turnoutPct: 0.80, swing: 0, pocSurge: 0.15, pocLean: 0.65 } },
+  { id: "lowturnout", label: "Low turnout",
+    desc: "Sleepy off-cycle electorate",
+    v: { baseline: "gov2022", turnoutPct: 0.55, swing: 0, pocSurge: 0, pocLean: 0.60 } },
+];
+
 /* --------- campaign data helpers --------- */
 
 function dflShare(kind, id) {
@@ -1352,6 +1371,11 @@ function scenarioChanged() {
   renderScenarioPanel();
 }
 
+function scenarioMatchesPreset(p) {
+  const s = state.scenario;
+  return s && Object.keys(p.v).every(k => s[k] === p.v[k]);
+}
+
 function fmtSigned(pp) {
   return (pp >= 0 ? "+" : "") + pp.toFixed(1);
 }
@@ -1400,6 +1424,13 @@ function renderScenarioPanel() {
     </div>
     <p class="scn-total">${proj.ballots ? fmt(proj.ballots) + " projected ballots · " + fmt(proj.clark) + " Clark / " + fmt(proj.wosje) + " Wosje" : ""}</p>
 
+    <h3 class="section-title">Presets</h3>
+    <div class="scn-presets">
+      ${SCENARIO_PRESETS.map(p => `
+        <button class="scn-preset${scenarioMatchesPreset(p) ? " active" : ""}"
+          data-preset="${p.id}" title="${esc(p.desc)}">${esc(p.label)}</button>`).join("")}
+    </div>
+
     <h3 class="section-title">Assumptions</h3>
     <div class="scn-ctl">
       <label for="scn-baseline">Partisan lean based on</label>
@@ -1429,6 +1460,11 @@ function renderScenarioPanel() {
       sliders. Assumes a contested race draws near-full ballot participation.</p>`;
 
   // wire controls
+  document.querySelectorAll(".scn-preset").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const p = SCENARIO_PRESETS.find(x => x.id === btn.dataset.preset);
+      if (p) { state.scenario = { ...p.v }; scenarioChanged(); }
+    }));
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("input", fn); };
   document.getElementById("scn-baseline")?.addEventListener("change", e => {
     s.baseline = e.target.value; scenarioChanged();
