@@ -78,6 +78,29 @@ Beyond the raw data, the app is built to help a campaign target the city:
   of color (with an explicit, adjustable assumed lean). It is a model, not a
   poll, and it fabricates no vote counts of its own.
 
+## A full war room, not just a map
+
+The site is now three tabs, not one page:
+
+- **Path to Win** — the campaign story, built from the same real data as the
+  map: the citywide win number (registered voters × an assumed turnout, /2+1),
+  the 2022 "mayor GOTV gap" left by Wosje's uncontested race, a ranked list of
+  top GOTV precincts and top persuasion precincts, and messaging matched to
+  each audience and grounded in Clark's actual record.
+- **Map** — the interactive precinct/ward/district map described above,
+  unchanged in function, now living in its own tab and still a single page
+  (no scrolling — it fills the viewport under the site header).
+- **Clark's Record** — Clark Gregor's tangible record on the Plymouth City
+  Council, mapped geographically: a small ward map with pins at the real
+  street or intersection named in each source, a filterable list by category
+  (housing, infrastructure, parks, environment, development, public safety),
+  and a status badge (Delivered / In progress / Proposed) so nothing reads as
+  finished before it is. Every item links to its source — city council
+  coverage from the Sun Sailor / hometownsource.com, the Star Tribune, CCX
+  Media, and Clark's own campaign site (clarkgregor.com) — and locations were
+  geocoded from the address or intersection named in that source, not
+  guessed.
+
 ---
 
 ## Repository layout
@@ -86,11 +109,17 @@ Beyond the raw data, the app is built to help a campaign target the city:
 PlymouthMap/
 ├── README.md                 ← you are here
 ├── web/                      ← the app itself (static site, no build step)
-│   ├── index.html
+│   ├── index.html            ← site shell: Path to Win / Map / Clark's Record tabs
 │   ├── css/style.css
-│   ├── js/app.js
+│   ├── js/
+│   │   ├── tabs.js            ← switches between the three tabs
+│   │   ├── app.js             ← the interactive map (Map tab)
+│   │   ├── warroom.js         ← Path to Win tab (win number, targets, messaging)
+│   │   └── record.js          ← Clark's Record tab (impact map + filterable list)
 │   └── data/                 ← generated GeoJSON + JSON (committed, so the
 │                                app works without running the pipeline)
+│       └── impact.json        ← Clark's sourced council record (hand-curated,
+│                                 not part of the pipeline — see note in the file)
 ├── pipeline/                 ← data processing scripts (Python)
 │   ├── requirements.txt
 │   ├── common.py             ← shared geometry/IO helpers
@@ -230,3 +259,9 @@ Vercel, Cloudflare Pages, or any web server — just point the host at the
   the precinct codes still match.
 - This is an independent civic project, not affiliated with the City of
   Plymouth, Hennepin County, or the State of Minnesota.
+- **Clark's Record** (`web/data/impact.json`) is hand-curated from public
+  reporting and Clark's own campaign site, not the automated pipeline. Pin
+  locations are geocoded from the street/intersection named in the source
+  and are approximate for anything short of a full address. It reflects a
+  snapshot as of mid-2026 and won't update itself as new council action
+  happens — refresh it by hand when it goes stale.
