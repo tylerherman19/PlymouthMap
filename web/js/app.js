@@ -238,12 +238,28 @@ async function init() {
   state.demographics = demographics;
   state.turnout = turnout;
   Object.keys(LAYERS).forEach((name, i) => { state.data[name] = layerData[i]; });
+  state.dataReady = true;
+  document.dispatchEvent(new CustomEvent("appdata"));
 
   const cityLayer = L.geoJSON(city, {
     interactive: false,
     style: { color: "#374151", weight: 2, dashArray: "5 4", fill: false },
   }).addTo(state.map);
-  state.map.fitBounds(cityLayer.getBounds().pad(0.04));
+  state.cityBounds = cityLayer.getBounds();
+  // If the Map tab isn't the visible tab yet, the container has zero size and
+  // fitBounds/tile loading won't compute correctly. Leaflet needs a real
+  // invalidateSize() + re-fit once the tab actually becomes visible.
+  state.needsMapRefit = document.getElementById("map").offsetWidth === 0;
+  state.map.fitBounds(state.cityBounds.pad(0.04));
+
+  document.addEventListener("tabshow", e => {
+    if (e.detail.tab !== "map") return;
+    state.map.invalidateSize();
+    if (state.needsMapRefit) {
+      state.map.fitBounds(state.cityBounds.pad(0.04));
+      state.needsMapRefit = false;
+    }
+  });
 
   buildCandidateIndex();
 

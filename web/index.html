@@ -3,75 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Plymouth Votes — election &amp; demographic map of Plymouth, MN</title>
+  <title>Clark Gregor for Plymouth Mayor — 2026 War Room</title>
   <meta name="description"
-        content="Explore how different parts of Plymouth, Minnesota vote, with election results and census demographics for every precinct, ward, and district.">
+        content="The 2026 campaign war room for Clark Gregor for Plymouth Mayor: the path to 51%, an interactive precinct map, and Clark's record on the city council.">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="css/style.css?v=20260630b">
+  <link rel="stylesheet" href="css/style.css?v=20260701a">
 </head>
 <body>
-  <header id="topbar">
-    <h1>Plymouth Votes</h1>
-    <p>How Plymouth, Minnesota votes — by precinct, ward, and district</p>
+  <header id="site-header">
+    <div class="site-title">
+      <h1>Clark Gregor <span>for Plymouth Mayor</span></h1>
+      <p>2026 campaign war room</p>
+    </div>
+    <nav id="site-tabs" aria-label="War room section">
+      <button class="site-tab active" data-tab="warroom">Path to Win</button>
+      <button class="site-tab" data-tab="map">Map</button>
+      <button class="site-tab" data-tab="record">Clark's Record</button>
+    </nav>
   </header>
 
-  <nav id="layer-picker" aria-label="Map layer">
-    <span class="picker-label">Show</span>
-    <button data-layer="precincts" class="active">Precincts</button>
-    <button data-layer="wards">Wards</button>
-    <button data-layer="house">MN House</button>
-    <button data-layer="senate">MN Senate</button>
-    <button data-layer="congress">U.S. House</button>
-    <span class="picker-label picker-gap">Color by</span>
-    <button data-view="priority" class="active view-btn">Priority</button>
-    <button data-view="margin" class="view-btn">Vote margin</button>
-    <button data-view="turnout" class="view-btn">Turnout</button>
-    <button data-view="income" class="view-btn">Income</button>
-    <button data-view="age" class="view-btn">Age</button>
-    <button data-view="diversity" class="view-btn">Diversity</button>
-    <span class="picker-label picker-gap">Overlay</span>
-    <button data-overlay="income" class="overlay-btn">Income</button>
-    <button data-overlay="age" class="overlay-btn">Age</button>
-    <button data-overlay="diversity" class="overlay-btn">Diversity</button>
-    <span class="picker-gap"></span>
-    <button id="topbar-scenario-btn" title="Model 2026 turnout and environment scenarios">Scenario</button>
-    <button id="topbar-clark-btn" title="Map Clark Gregor's 2022 precinct performance">Clark's Map</button>
-    <button id="split-toggle" title="Side-by-side comparison of two election years">Compare years</button>
-    <button id="export-btn" title="Download a clean, presentation-ready map graphic">Export slide</button>
-  </nav>
-
-  <main id="map-wrap">
-    <div id="map" aria-label="Map of Plymouth, Minnesota"></div>
-    <div id="legend"></div>
-    <div id="split-control" hidden>
-      <div id="split-divider"><div id="split-handle" role="slider"
-           aria-label="Drag to compare years" aria-valuemin="0" aria-valuemax="100">⇆</div></div>
-      <select id="split-left" class="split-year" aria-label="Left year"></select>
-      <select id="split-right" class="split-year" aria-label="Right year"></select>
+  <section id="tab-warroom" class="tab-panel active" data-tab-panel="warroom">
+    <div id="warroom-content" class="warroom-content">
+      <div class="panel-empty"><h2>Loading…</h2></div>
     </div>
-  </main>
+  </section>
 
-  <aside id="panel">
-    <div id="cand-search">
-      <input id="cand-input" type="search"
-             placeholder="Search any candidate (Harris, Walz, Morrison…)"
-             autocomplete="off" aria-label="Search candidates">
-      <div id="cand-results" hidden></div>
-    </div>
-    <div id="panel-content">
-      <div class="panel-empty">
-        <h2>Loading…</h2>
+  <section id="tab-map" class="tab-panel" data-tab-panel="map">
+    <nav id="layer-picker" aria-label="Map layer">
+      <span class="picker-label">Show</span>
+      <button data-layer="precincts" class="active">Precincts</button>
+      <button data-layer="wards">Wards</button>
+      <button data-layer="house">MN House</button>
+      <button data-layer="senate">MN Senate</button>
+      <button data-layer="congress">U.S. House</button>
+      <span class="picker-label picker-gap">Color by</span>
+      <button data-view="priority" class="active view-btn">Priority</button>
+      <button data-view="margin" class="view-btn">Vote margin</button>
+      <button data-view="turnout" class="view-btn">Turnout</button>
+      <button data-view="income" class="view-btn">Income</button>
+      <button data-view="age" class="view-btn">Age</button>
+      <button data-view="diversity" class="view-btn">Diversity</button>
+      <span class="picker-label picker-gap">Overlay</span>
+      <button data-overlay="income" class="overlay-btn">Income</button>
+      <button data-overlay="age" class="overlay-btn">Age</button>
+      <button data-overlay="diversity" class="overlay-btn">Diversity</button>
+      <span class="picker-gap"></span>
+      <button id="topbar-scenario-btn" title="Model 2026 turnout and environment scenarios">Scenario</button>
+      <button id="topbar-clark-btn" title="Map Clark Gregor's 2022 precinct performance">Clark's Map</button>
+      <button id="split-toggle" title="Side-by-side comparison of two election years">Compare years</button>
+      <button id="export-btn" title="Download a clean, presentation-ready map graphic">Export slide</button>
+    </nav>
+
+    <main id="map-wrap">
+      <div id="map" aria-label="Map of Plymouth, Minnesota"></div>
+      <div id="legend"></div>
+      <div id="split-control" hidden>
+        <div id="split-divider"><div id="split-handle" role="slider"
+             aria-label="Drag to compare years" aria-valuemin="0" aria-valuemax="100">⇆</div></div>
+        <select id="split-left" class="split-year" aria-label="Left year"></select>
+        <select id="split-right" class="split-year" aria-label="Right year"></select>
       </div>
-    </div>
-  </aside>
+    </main>
 
-  <footer id="credits">
-    Data: <a href="https://electionresults.sos.mn.gov" target="_blank" rel="noopener">MN Secretary of State</a> ·
-    <a href="https://gis-hennepin.hub.arcgis.com/" target="_blank" rel="noopener">Hennepin County GIS</a> ·
-    <a href="https://www.census.gov/programs-surveys/acs" target="_blank" rel="noopener">Census ACS 2023</a>
-  </footer>
+    <aside id="panel">
+      <div id="cand-search">
+        <input id="cand-input" type="search"
+               placeholder="Search any candidate (Harris, Walz, Morrison…)"
+               autocomplete="off" aria-label="Search candidates">
+        <div id="cand-results" hidden></div>
+      </div>
+      <div id="panel-content">
+        <div class="panel-empty">
+          <h2>Loading…</h2>
+        </div>
+      </div>
+    </aside>
+
+    <footer id="credits">
+      Data: <a href="https://electionresults.sos.mn.gov" target="_blank" rel="noopener">MN Secretary of State</a> ·
+      <a href="https://gis-hennepin.hub.arcgis.com/" target="_blank" rel="noopener">Hennepin County GIS</a> ·
+      <a href="https://www.census.gov/programs-surveys/acs" target="_blank" rel="noopener">Census ACS 2023</a>
+    </footer>
+  </section>
+
+  <section id="tab-record" class="tab-panel" data-tab-panel="record">
+    <div id="record-content" class="record-content">
+      <div class="panel-empty"><h2>Loading…</h2></div>
+    </div>
+  </section>
 
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="js/app.js?v=20260630b"></script>
+  <script src="js/tabs.js?v=20260701a"></script>
+  <script src="js/app.js?v=20260701a"></script>
+  <script src="js/warroom.js?v=20260701a"></script>
+  <script src="js/record.js?v=20260701a"></script>
 </body>
 </html>
