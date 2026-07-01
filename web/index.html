@@ -7,7 +7,7 @@
   <meta name="description"
         content="Explore how different parts of Plymouth, Minnesota vote, with election results and census demographics for every precinct, ward, and district.">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20260630">
 </head>
 <body>
   <header id="topbar">
@@ -25,7 +25,7 @@
     <span class="picker-label picker-gap">Color by</span>
     <button data-view="priority" class="active view-btn">Priority</button>
     <button data-view="margin" class="view-btn">Vote margin</button>
-    <button data-view="engagement" class="view-btn">Engagement</button>
+    <button data-view="turnout" class="view-btn">Turnout</button>
     <button data-view="income" class="view-btn">Income</button>
     <button data-view="age" class="view-btn">Age</button>
     <button data-view="diversity" class="view-btn">Diversity</button>
@@ -34,6 +34,7 @@
     <button data-overlay="age" class="overlay-btn">Age</button>
     <button data-overlay="diversity" class="overlay-btn">Diversity</button>
     <span class="picker-gap"></span>
+    <button id="topbar-scenario-btn" title="Model 2026 turnout and environment scenarios">Scenario</button>
     <button id="topbar-clark-btn" title="Map Clark Gregor's 2022 precinct performance">Clark's Map</button>
     <button id="split-toggle" title="Side-by-side comparison of two election years">Compare years</button>
     <button id="export-btn" title="Download a clean, presentation-ready map graphic">Export slide</button>
@@ -71,6 +72,6 @@
   </footer>
 
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=20260630"></script>
 </body>
 </html>

@@ -29,7 +29,7 @@ const PRIORITY_TIERS = [
 const VIEWS = {
   margin:     { label: "Vote margin" },
   priority:   { label: "Campaign priority" },
-  engagement: { label: "Local election engagement", lo: "#fdba74", hi: "#1e3a8a",
+  turnout:    { label: "Voter turnout (2022)", lo: "#fdba74", hi: "#1e3a8a",
                 format: v => (100 * v).toFixed(0) + "%" },
   income:     { label: "Median household income", lo: "#edf8e9", hi: "#00541f",
                 value: d => d?.medianIncome, format: v => "$" + Math.round(v).toLocaleString("en-US") },
@@ -45,6 +45,7 @@ const state = {
   data: {},          // layer name -> geojson
   elections: null,
   demographics: null,
+  turnout: null,     // registration + ballots cast per area/cycle
   activeLayer: "precincts",
   colorBy: "priority",   // default to campaign priority view
   leafletLayer: null,
@@ -57,6 +58,23 @@ const state = {
   splitLayers: { left: null, right: null },
   overlay: null,     // "income" | "age" | "diversity" | null
   overlayLayer: null,
+  scenario: null,    // 2026 what-if model inputs, or null
+};
+
+// Scenario modeler defaults. Every value is a transparent, user-adjustable
+// assumption — the model invents no vote counts of its own.
+const SCENARIO_DEFAULTS = {
+  baseline: "gov2022",  // which real race defines each precinct's partisan lean
+  turnoutPct: 0.73,     // ballots cast as a share of registered voters
+  swing: 0,             // points added to DFL lean citywide (− = more R)
+  pocSurge: 0,          // extra turnout (share of reg) concentrated by POC share
+  pocLean: 0.60,        // assumed Clark share among those surge voters
+};
+
+const SCENARIO_BASELINES = {
+  pres2024: { cycle: "2024", label: "2024 President", match: o => o.startsWith("U.S. President") },
+  gov2022:  { cycle: "2022", label: "2022 Governor", match: o => o.startsWith("Governor") },
+  pres2020: { cycle: "2020", label: "2020 President", match: o => o.startsWith("U.S. President") },
 };
 
 /* --------- campaign data helpers --------- */
@@ -88,12 +106,85 @@ function clarkStats2022(kind, id) {
   return { votes: c.votes, total: race.total, share: c.votes / race.total };
 }
 
-function engagementRatio(kind, id) {
+// Real registration + ballots (MN SoS precinct statistics), per cycle.
+function turnoutInfo(kind, id, cycle = "2022") {
+  return state.turnout?.areas?.[kind]?.[id]?.[cycle] ?? null;
+}
+
+function turnoutRate(kind, id, cycle = "2022") {
+  const d = turnoutInfo(kind, id, cycle);
+  return d && d.registered ? d.ballots / d.registered : null;
+}
+
+// The mayor-race GOTV universe: registered voters who did NOT cast a mayor
+// vote in 2022 (both no-shows and ballot drop-off), from real counts.
+function mayorGap(kind, id) {
+  const d = turnoutInfo(kind, id, "2022");
   const r2022 = state.elections.results[kind]?.[id]?.["2022"];
   const mayor = r2022?.find(r => r.office === "Mayor (Plymouth)");
-  const congress = r2022?.find(r => r.office.startsWith("U.S. Representative"));
-  if (!mayor || !congress || !congress.total) return null;
-  return mayor.total / congress.total;
+  if (!d || !mayor) return null;
+  return {
+    registered: d.registered,
+    ballots: d.ballots,
+    mayorVotes: mayor.total,
+    gap: d.registered - mayor.total,
+  };
+}
+
+/* --------- 2026 scenario model ---------
+ * A transparent what-if model. For each area we start from a REAL partisan
+ * lean (a past race the user picks) and REAL registration, then apply the
+ * user's assumptions about turnout, the partisan environment, and a turnout
+ * surge among residents of color. No vote totals are fabricated; every knob
+ * is shown in the panel. */
+
+function baselineLean(kind, id) {
+  const b = SCENARIO_BASELINES[state.scenario?.baseline ?? SCENARIO_DEFAULTS.baseline];
+  const races = state.elections.results[kind]?.[id]?.[b.cycle];
+  const race = races?.find(r => b.match(r.office));
+  if (!race) return null;
+  let dfl = 0, gop = 0;
+  race.candidates.forEach(c => {
+    if (c.party === "DFL") dfl += c.votes;
+    if (c.party === "R") gop += c.votes;
+  });
+  return dfl + gop > 0 ? dfl / (dfl + gop) : null;
+}
+
+function pocShareOf(kind, id) {
+  const d = state.demographics.areas[kind]?.[id];
+  return d && d.population ? (d.population - d.white) / d.population : null;
+}
+
+// Project one area under the current scenario. Returns null if we lack the
+// real inputs (lean or registration) to model it honestly.
+function scenarioProject(kind, id) {
+  const s = state.scenario;
+  if (!s) return null;
+  const lean0 = baselineLean(kind, id);
+  const reg = turnoutInfo(kind, id, "2024")?.registered;
+  if (lean0 == null || !reg) return null;
+
+  const lean = Math.max(0.02, Math.min(0.98, lean0 + s.swing));
+  const poc = pocShareOf(kind, id) ?? 0;
+  const baseBallots = reg * s.turnoutPct;
+  const surge = reg * s.pocSurge * poc;          // extra turnout, by POC share
+  const ballots = baseBallots + surge;
+  const clark = baseBallots * lean + surge * s.pocLean;
+  return { ballots, clark, wosje: ballots - clark,
+           share: ballots > 0 ? clark / ballots : null };
+}
+
+// Citywide projection is always summed from precincts (the cleanest partition
+// of the city), regardless of which layer is on screen.
+function scenarioCitywide() {
+  let ballots = 0, clark = 0;
+  for (const f of state.data.precincts.features) {
+    const p = scenarioProject("precinct", f.properties.id);
+    if (p) { ballots += p.ballots; clark += p.clark; }
+  }
+  return { ballots, clark, wosje: ballots - clark,
+           share: ballots > 0 ? clark / ballots : null };
 }
 
 /* --------- init --------- */
@@ -117,8 +208,8 @@ async function init() {
   demoPane.style.pointerEvents = "none";
 
   const files = ["data/city.geojson", "data/elections.json", "data/demographics.json",
-                 ...Object.values(LAYERS).map(l => l.file)];
-  const [city, elections, demographics, ...layerData] =
+                 "data/turnout.json", ...Object.values(LAYERS).map(l => l.file)];
+  const [city, elections, demographics, turnout, ...layerData] =
     await Promise.all(files.map(f => fetch(f).then(r => {
       if (!r.ok) throw new Error(`Failed to load ${f}`);
       return r.json();
@@ -126,6 +217,7 @@ async function init() {
 
   state.elections = elections;
   state.demographics = demographics;
+  state.turnout = turnout;
   Object.keys(LAYERS).forEach((name, i) => { state.data[name] = layerData[i]; });
 
   const cityLayer = L.geoJSON(city, {
@@ -143,9 +235,12 @@ async function init() {
     btn.addEventListener("click", () => {
       if (state.mode === "candidate") exitCandidateMode(true);
       if (state.split) exitSplit();
-      state.colorBy = btn.dataset.view;
+      // Clicking the already-active view toggles back to the default
+      // (Priority), so any view can be "turned off".
+      state.colorBy = (btn.dataset.view === state.colorBy && btn.dataset.view !== "priority")
+        ? "priority" : btn.dataset.view;
       document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
-        b.classList.toggle("active", b === btn));
+        b.classList.toggle("active", b.dataset.view === state.colorBy));
       refreshStyles();
       renderLegend();
     });
@@ -167,13 +262,24 @@ async function init() {
         e.preventDefault();
         state.candB = null;
         candidateModeChanged();
+      } else if (a.id === "open-scenario") {
+        e.preventDefault();
+        enterScenario();
+      } else if (a.id === "exit-scenario") {
+        e.preventDefault();
+        exitScenario();
+      } else if (a.id === "reset-scenario") {
+        e.preventDefault();
+        state.scenario = { ...SCENARIO_DEFAULTS };
+        scenarioChanged();
       }
     }
-    // Clark quick-launch button in campaign home panel
     const btn = e.target.closest("button");
     if (btn && btn.id === "clark-btn") {
       const clark = state.candidateIndex.find(c => c.name.includes("Gregor") && c.cycle === "2022");
       if (clark) enterCandidate(clark);
+    } else if (btn && btn.id === "scenario-btn") {
+      enterScenario();
     }
   });
 
@@ -197,6 +303,9 @@ async function init() {
       if (clark) enterCandidate(clark);
     });
   }
+  const scenarioTopBtn = document.getElementById("topbar-scenario-btn");
+  if (scenarioTopBtn) scenarioTopBtn.addEventListener("click", () =>
+    state.scenario ? exitScenario() : enterScenario());
 
   // Mark priority as active by default
   document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
@@ -220,13 +329,12 @@ function renderCampaignHome() {
     if (tier) tierStats[tier.id].count++;
   }
 
-  // Citywide DFL share
+  // Citywide figures — all from real data, no fallbacks.
   const cityShare = dflShare("city", "plymouth");
   const clarkCity = clarkStats2022("city", "plymouth");
-
-  // Wosje 2022 mayor total (uncontested)
-  const mayorRace = state.elections.results.city?.plymouth?.["2022"]?.find(r => r.office === "Mayor (Plymouth)");
-  const wosjeTotal = mayorRace ? fmt(mayorRace.total) : "27,411";
+  const cityTurnout = turnoutRate("city", "plymouth", "2022");
+  const cityGap = mayorGap("city", "plymouth");
+  const reg2024 = turnoutInfo("city", "plymouth", "2024");
 
   const tierRows = PRIORITY_TIERS.map(t => {
     const count = tierStats[t.id]?.count ?? 0;
@@ -254,36 +362,41 @@ function renderCampaignHome() {
       <h3 class="section-title">The lay of the land</h3>
       <div class="demo-grid" style="margin-bottom:12px">
         <div class="demo-stat">
-          <div class="v">${cityShare !== null ? (100 * cityShare).toFixed(1) + "%" : "62.5%"}</div>
+          <div class="v">${cityShare !== null ? (100 * cityShare).toFixed(1) + "%" : "—"}</div>
           <div class="k">DFL lean (2024 presidential)</div>
         </div>
         <div class="demo-stat">
-          <div class="v">${clarkCity ? fmt(clarkCity.votes) : "12,018"}</div>
-          <div class="k">Clark's 2022 council votes</div>
+          <div class="v">${clarkCity ? fmt(clarkCity.votes) : "—"}</div>
+          <div class="k">Clark's 2022 council votes (${clarkCity ? pct(clarkCity.votes, clarkCity.total) : "—"})</div>
         </div>
         <div class="demo-stat">
-          <div class="v">${clarkCity ? pct(clarkCity.votes, clarkCity.total) : "41.2%"}</div>
-          <div class="k">Clark's share (3-way race)</div>
+          <div class="v">${reg2024 ? fmt(reg2024.registered) : "—"}</div>
+          <div class="k">Registered voters (2024)</div>
         </div>
         <div class="demo-stat">
-          <div class="v">${wosjeTotal}</div>
-          <div class="k">2022 mayor race total votes</div>
+          <div class="v">${cityTurnout !== null ? (100 * cityTurnout).toFixed(0) + "%" : "—"}</div>
+          <div class="k">2022 turnout (midterm)</div>
         </div>
       </div>
 
-      <div class="win-scenario">
-        <strong>Win scenario:</strong> Wosje ran uncontested in 2022 — no head-to-head baseline exists. In a 2-candidate race, Clark needs <strong>50%+ of turnout</strong>. If ~28,000 votes are cast, the win number is ~<strong>14,000</strong>. Clark's 2022 council coalition (41% in a 3-way race) extrapolates to ~11,500. He needs ~2,500 more from Wosje soft support and new voters.
-      </div>
+      ${cityGap ? `<div class="win-scenario">
+        <strong>The opportunity:</strong> In 2022 Wosje ran <strong>uncontested</strong>, so
+        <strong>${fmt(cityGap.gap)}</strong> registered Plymouth voters didn't cast a mayor vote
+        at all (${fmt(cityGap.registered)} registered, only ${fmt(cityGap.mayorVotes)} mayor votes).
+        A contested 2026 race opens that universe up. Use the scenario modeler to project how
+        turnout, the partisan environment, and who shows up change the result.
+      </div>` : ""}
 
       <h3 class="section-title">Precinct priorities</h3>
       <div class="tier-legend">${tierRows}</div>
 
       <div class="home-actions">
-        <button id="clark-btn" class="action-btn">Map Clark's 2022 Base →</button>
+        <button id="scenario-btn" class="action-btn">Model a 2026 scenario →</button>
+        <button id="clark-btn" class="action-btn action-btn-alt">Map Clark's 2022 base →</button>
         <a href="#" id="citywide-link" class="action-link">View full citywide results →</a>
       </div>
 
-      <p class="fineprint">Click any precinct on the map for campaign context and a recommended action. Use "Priority" in the Color by toolbar to see the priority map, or "Engagement" to find precincts with latent voters.</p>
+      <p class="fineprint">Click any precinct on the map for campaign context and a recommended action. Use "Priority" in the Color by toolbar to see the priority map, or "Turnout" to find precincts with the most registered non-voters.</p>
     </div>`;
 }
 
@@ -308,6 +421,7 @@ function setLayer(name) {
         state.selectedId = f.properties.id;
         refreshStyles();
         if (state.mode === "candidate") renderCandidatePanel();
+        else if (state.scenario) renderScenarioPanel();
         else renderPanel(kind, f.properties.id, f.properties);
       });
       lyr.on("mouseover", () => lyr.setStyle({ weight: 3, color: "#111827" }));
@@ -318,9 +432,18 @@ function setLayer(name) {
   rebuildSplitLayers();
   rebuildOverlayLayer();
   if (state.mode === "candidate") renderCandidatePanel();
+  else if (state.scenario) renderScenarioPanel();
 }
 
 function tooltipFor(kind, props) {
+  if (state.scenario) {
+    const p = scenarioProject(kind, props.id);
+    let html = `<b>${esc(props.name)}</b>`;
+    html += p && p.share != null
+      ? `<br>Clark ${(100 * p.share).toFixed(0)}% · ${fmt(p.clark)} of ${fmt(p.ballots)}`
+      : `<br>no projection`;
+    return html;
+  }
   if (state.split) {
     let html = `<b>${esc(props.name)}</b>`;
     for (const side of ["left", "right"]) {
@@ -338,9 +461,9 @@ function tooltipFor(kind, props) {
       if (tier) html += `<br>${esc(tier.label)} — ${esc(tier.action)}`;
       const share = dflShare(kind, props.id);
       if (share !== null) html += `<br>${(100 * share).toFixed(1)}% DFL lean`;
-    } else if (state.colorBy === "engagement") {
-      const ratio = engagementRatio(kind, props.id);
-      if (ratio !== null) html += `<br>${(100 * ratio).toFixed(0)}% local turnout rate`;
+    } else if (state.colorBy === "turnout") {
+      const rate = turnoutRate(kind, props.id, "2022");
+      if (rate !== null) html += `<br>${(100 * rate).toFixed(0)}% turnout (2022)`;
     }
     return html;
   }
@@ -407,6 +530,19 @@ function styleFor(kind, id) {
   const selected = id === state.selectedId;
   let fill = "#d1d5db", opacity = 0.35;
 
+  if (state.scenario) {
+    const p = scenarioProject(kind, id);
+    if (p && p.share != null) {
+      fill = divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, (p.share - 0.5) / 0.5);
+      opacity = 0.75;
+    }
+    return {
+      color: selected ? "#111827" : "#ffffff",
+      weight: selected ? 3 : 1.4,
+      fillColor: fill, fillOpacity: opacity,
+    };
+  }
+
   if (state.split) {
     return {
       color: selected ? "#111827" : "#ffffff",
@@ -439,10 +575,10 @@ function styleFor(kind, id) {
   } else if (state.colorBy === "priority") {
     const tier = priorityTierFor(kind, id);
     if (tier) { fill = tier.mapColor; opacity = 0.75; }
-  } else if (state.colorBy === "engagement") {
-    const ratio = engagementRatio(kind, id);
-    if (ratio !== null) {
-      const t = Math.max(0, Math.min(1, (ratio - 0.58) / 0.18)); // 58%–76% range
+  } else if (state.colorBy === "turnout") {
+    const rate = turnoutRate(kind, id, "2022");
+    if (rate !== null) {
+      const t = Math.max(0, Math.min(1, (rate - 0.55) / 0.35)); // 55%–90% range
       fill = lerpColor("#fdba74", "#1e3a8a", t);
       opacity = 0.75;
     }
@@ -488,6 +624,16 @@ function overlayLegendHtml() {
 
 function renderLegend() {
   const el = document.getElementById("legend");
+  if (state.scenario) {
+    el.innerHTML = `<div class="legend-row">
+      <span>Wosje</span>
+      <span class="gradient" style="background:linear-gradient(to right,
+        ${PARTY_COLORS.R}, #ffffff, ${PARTY_COLORS.DFL})"></span>
+      <span>Clark</span>
+      <span class="legend-note">projected 2026 winner by area</span>
+    </div>`;
+    return;
+  }
   if (state.split) {
     el.innerHTML = `<div class="legend-row">
       <span>R +50%</span>
@@ -531,13 +677,13 @@ function renderLegend() {
     el.innerHTML = `<div class="legend-priority">${swatches}</div>` + overlayLegendHtml();
     return;
   }
-  if (state.colorBy === "engagement") {
+  if (state.colorBy === "turnout") {
     el.innerHTML = `<div class="legend-row">
-      <span>Low turnout</span>
+      <span>55%</span>
       <span class="gradient" style="background:linear-gradient(to right,
         #fdba74, #1e3a8a)"></span>
-      <span>High turnout</span>
-      <span class="legend-note">2022 local election engagement vs. congressional</span>
+      <span>90%</span>
+      <span class="legend-note">2022 turnout — ballots cast ÷ registered (MN SoS)</span>
     </div>` + overlayLegendHtml();
     return;
   }
@@ -610,7 +756,8 @@ function campaignContextHtml(kind, id) {
   const tier = priorityTierFor(kind, id);
   const share = dflShare(kind, id);
   const clark = clarkStats2022(kind, id);
-  const engagement = engagementRatio(kind, id);
+  const turnout = turnoutRate(kind, id, "2022");
+  const gap = mayorGap(kind, id);
 
   if (!tier && !clark) return "";
 
@@ -642,7 +789,8 @@ function campaignContextHtml(kind, id) {
     <div class="campaign-stats">
       ${share !== null ? `<span><span>DFL lean (2024)</span><b>${(100 * share).toFixed(1)}%</b></span>` : ""}
       ${clark ? `<span><span>Clark's 2022 council</span><b>${fmt(clark.votes)} votes (${pct(clark.votes, clark.total)} of race)</b></span>` : ""}
-      ${engagement !== null ? `<span><span>2022 local turnout rate</span><b>${(100 * engagement).toFixed(0)}% of congressional</b></span>` : ""}
+      ${turnout !== null ? `<span><span>2022 turnout</span><b>${(100 * turnout).toFixed(0)}% (${fmt(gap.ballots)} of ${fmt(gap.registered)})</b></span>` : ""}
+      ${gap ? `<span><span>2022 mayor GOTV gap</span><b>${fmt(gap.gap)} didn't vote for mayor</b></span>` : ""}
     </div>
     <p class="campaign-story">${esc(story)}</p>
   </div>`;
@@ -652,13 +800,16 @@ function citywideContextHtml() {
   const clarkCity = clarkStats2022("city", "plymouth");
   const mayorRace = state.elections.results.city?.plymouth?.["2022"]?.find(r => r.office === "Mayor (Plymouth)");
   const share = dflShare("city", "plymouth");
+  const gap = mayorGap("city", "plymouth");
   if (!clarkCity && !mayorRace) return "";
+  const bits = [];
+  if (share !== null) bits.push(`Plymouth voted <strong>${(100*share).toFixed(1)}% DFL</strong> in 2024.`);
+  if (clarkCity) bits.push(`Clark won council at-large in 2022 with <strong>${fmt(clarkCity.votes)} votes (${pct(clarkCity.votes, clarkCity.total)})</strong> in a 3-way race.`);
+  if (mayorRace) bits.push(`Wosje ran <strong>uncontested</strong> for mayor — his ${fmt(mayorRace.total)} votes reflect no opposition.`);
+  if (gap) bits.push(`<strong>${fmt(gap.gap)}</strong> registered voters didn't cast a 2022 mayor vote at all.`);
   return `<div class="win-scenario" style="margin-bottom:14px">
-    <strong>2026 Campaign context:</strong>
-    Plymouth voted <strong>${share !== null ? (100*share).toFixed(1)+"%" : "62.5%"} DFL</strong> in 2024.
-    Clark won council at-large in 2022 with <strong>${clarkCity ? fmt(clarkCity.votes) : "12,018"} votes (${clarkCity ? pct(clarkCity.votes, clarkCity.total) : "41.2%"})</strong> in a 3-way race.
-    Wosje ran uncontested for mayor — his <strong>${mayorRace ? fmt(mayorRace.total) : "27,411"}</strong> total reflects no opposition.
-    In a head-to-head 2026 race, the win number is roughly <strong>14,000 votes</strong>.
+    <strong>2026 campaign context:</strong> ${bits.join(" ")}
+    <a href="#" id="open-scenario" style="display:inline-block;margin-top:6px">Model a 2026 scenario →</a>
   </div>`;
 }
 
@@ -1174,12 +1325,131 @@ function rebuildOverlayLayer() {
   }).addTo(state.map);
 }
 
+/* ---------- 2026 scenario modeler UI ---------- */
+
+function enterScenario() {
+  if (state.mode === "candidate") exitCandidateMode(true);
+  if (state.split) exitSplit();
+  state.scenario = { ...SCENARIO_DEFAULTS };
+  state.selectedId = null;
+  document.getElementById("topbar-scenario-btn")?.classList.add("active");
+  refreshStyles();
+  renderLegend();
+  renderScenarioPanel();
+}
+
+function exitScenario() {
+  state.scenario = null;
+  document.getElementById("topbar-scenario-btn")?.classList.remove("active");
+  refreshStyles();
+  renderLegend();
+  renderCampaignHome();
+}
+
+function scenarioChanged() {
+  refreshStyles();
+  renderLegend();
+  renderScenarioPanel();
+}
+
+function fmtSigned(pp) {
+  return (pp >= 0 ? "+" : "") + pp.toFixed(1);
+}
+
+function renderScenarioPanel() {
+  const s = state.scenario;
+  const proj = scenarioCitywide();
+  const winner = proj.share == null ? null : (proj.share >= 0.5 ? "clark" : "wosje");
+  const margin = proj.share == null ? 0 : Math.abs(proj.share - 0.5) * 2 * 100;
+  const clarkPct = proj.share == null ? "—" : (100 * proj.share).toFixed(1) + "%";
+  const wosjePct = proj.share == null ? "—" : (100 * (1 - proj.share)).toFixed(1) + "%";
+  const baseLabel = SCENARIO_BASELINES[s.baseline].label;
+
+  const banner = winner
+    ? `<div class="scn-banner ${winner}">
+         ${winner === "clark" ? "Clark wins" : "Wosje wins"} — ${margin.toFixed(1)} pt margin
+       </div>`
+    : `<div class="scn-banner tie">Not enough data</div>`;
+
+  // Ward projection table
+  const wards = Object.keys(state.elections.results.ward).sort();
+  const wardRows = wards.map(w => {
+    const p = scenarioProject("ward", w);
+    if (!p) return `<tr><td>Ward ${esc(w)}</td><td>—</td><td>—</td></tr>`;
+    const cw = p.share >= 0.5 ? "clark" : "wosje";
+    return `<tr><td>Ward ${esc(w)}</td>
+      <td>${fmt(p.clark)}</td>
+      <td class="${cw}">${(100 * p.share).toFixed(0)}% ${cw === "clark" ? "Clark" : "Wosje"}</td></tr>`;
+  }).join("");
+
+  const slider = (id, label, min, max, step, val, fmtVal) => `
+    <div class="scn-ctl">
+      <label>${label} <b id="scn-${id}-val">${fmtVal(val)}</b></label>
+      <input type="range" id="scn-${id}" min="${min}" max="${max}" step="${step}" value="${val}">
+    </div>`;
+
+  document.getElementById("panel-content").innerHTML = `
+    <p class="area-kicker"><a href="#" id="exit-scenario">← Back to overview</a></p>
+    <div class="race-badge">2026 Scenario Model</div>
+    <h2 class="area-name" style="margin-top:6px">Clark vs. Wosje — projected</h2>
+
+    ${banner}
+    <div class="scn-result">
+      <div class="scn-side clark"><div class="scn-pct">${clarkPct}</div><div class="scn-nm">Clark Gregor</div></div>
+      <div class="scn-side wosje"><div class="scn-pct">${wosjePct}</div><div class="scn-nm">Jeff Wosje</div></div>
+    </div>
+    <p class="scn-total">${proj.ballots ? fmt(proj.ballots) + " projected ballots · " + fmt(proj.clark) + " Clark / " + fmt(proj.wosje) + " Wosje" : ""}</p>
+
+    <h3 class="section-title">Assumptions</h3>
+    <div class="scn-ctl">
+      <label for="scn-baseline">Partisan lean based on</label>
+      <select id="scn-baseline">
+        ${Object.entries(SCENARIO_BASELINES).map(([k, v]) =>
+          `<option value="${k}" ${k === s.baseline ? "selected" : ""}>${esc(v.label)}</option>`).join("")}
+      </select>
+    </div>
+    ${slider("turnout", "Turnout (of registered)", 40, 95, 1, Math.round(s.turnoutPct * 100), v => v + "%")}
+    ${slider("swing", "Partisan environment", -15, 15, 0.5, s.swing * 100, v => fmtSigned(+v) + " pts " + (v >= 0 ? "DFL" : "R"))}
+    ${slider("pocsurge", "Turnout surge, voters of color", 0, 30, 1, Math.round(s.pocSurge * 100), v => "+" + v + "%")}
+    ${slider("poclean", "→ their assumed Clark share", 30, 90, 1, Math.round(s.pocLean * 100), v => v + "%")}
+
+    <div class="home-actions" style="margin-top:10px">
+      <a href="#" id="reset-scenario" class="action-link">Reset to 2022-midterm baseline</a>
+    </div>
+
+    <h3 class="section-title">Projected by ward</h3>
+    <div class="tbl-scroll"><table class="cand-table">
+      <tr><th>Ward</th><th>Clark votes</th><th>Result</th></tr>${wardRows}
+    </table></div>
+
+    <p class="fineprint">Model, not a poll. Each area starts from its <b>real</b>
+      two-party lean in ${esc(baseLabel)} and its <b>real</b> registered-voter
+      count (MN SoS), then applies the assumptions above. The turnout-surge voters
+      are the only invented ballots, and their count and lean are both set by the
+      sliders. Assumes a contested race draws near-full ballot participation.</p>`;
+
+  // wire controls
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("input", fn); };
+  document.getElementById("scn-baseline")?.addEventListener("change", e => {
+    s.baseline = e.target.value; scenarioChanged();
+  });
+  on("scn-turnout", e => { s.turnoutPct = +e.target.value / 100; scenarioChanged(); });
+  on("scn-swing", e => { s.swing = +e.target.value / 100; scenarioChanged(); });
+  on("scn-pocsurge", e => { s.pocSurge = +e.target.value / 100; scenarioChanged(); });
+  on("scn-poclean", e => { s.pocLean = +e.target.value / 100; scenarioChanged(); });
+}
+
 /* ---------- slide deck export ---------- */
 
 function exportFill(kind, id, cycleId) {
   if (cycleId) {
     const m = cycleMargin(kind, id, cycleId);
     return m === null ? null : divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, m / 0.5);
+  }
+  if (state.scenario) {
+    const p = scenarioProject(kind, id);
+    return p && p.share != null
+      ? divergingColor(PARTY_COLORS.R, PARTY_COLORS.DFL, (p.share - 0.5) / 0.5) : null;
   }
   if (state.mode === "candidate") {
     const [colA, colB] = duelColors();
@@ -1198,10 +1468,10 @@ function exportFill(kind, id, cycleId) {
     const tier = priorityTierFor(kind, id);
     return tier ? tier.mapColor : null;
   }
-  if (state.colorBy === "engagement") {
-    const ratio = engagementRatio(kind, id);
-    if (ratio === null) return null;
-    const t = Math.max(0, Math.min(1, (ratio - 0.58) / 0.18));
+  if (state.colorBy === "turnout") {
+    const rate = turnoutRate(kind, id, "2022");
+    if (rate === null) return null;
+    const t = Math.max(0, Math.min(1, (rate - 0.55) / 0.35));
     return lerpColor("#fdba74", "#1e3a8a", t);
   }
   if (state.colorBy === "margin") {
@@ -1218,6 +1488,11 @@ function exportFill(kind, id, cycleId) {
 }
 
 function exportTitle() {
+  if (state.scenario) {
+    const p = scenarioCitywide();
+    const w = p.share >= 0.5 ? "Clark" : "Wosje";
+    return `2026 projection — ${w} ${(100 * Math.max(p.share, 1 - p.share)).toFixed(0)}%`;
+  }
   if (state.mode === "candidate") {
     return state.candB
       ? `${shortName(state.candA.name)} vs ${shortName(state.candB.name)}`
@@ -1225,13 +1500,15 @@ function exportTitle() {
   }
   if (state.split) return `Vote margin: ${state.split.left} vs ${state.split.right}`;
   if (state.colorBy === "priority") return "Campaign Priority Map";
-  if (state.colorBy === "engagement") return "Local Election Engagement";
+  if (state.colorBy === "turnout") return "Voter Turnout (2022)";
   return state.colorBy === "margin" ? "Vote margin" : VIEWS[state.colorBy].label;
 }
 
 function exportLegend(ctx, x, y, w) {
   let from, to, mid = true, lo, hi;
-  if (state.mode === "candidate") {
+  if (state.scenario) {
+    from = PARTY_COLORS.R; to = PARTY_COLORS.DFL; lo = "Wosje"; hi = "Clark";
+  } else if (state.mode === "candidate") {
     const [colA, colB] = duelColors();
     if (state.candB) {
       from = colB; to = colA;
@@ -1254,9 +1531,9 @@ function exportLegend(ctx, x, y, w) {
       ctx.fillText(t.label, x + i * tileW + tileW / 2, y + 11);
     });
     return;
-  } else if (state.colorBy === "engagement") {
+  } else if (state.colorBy === "turnout") {
     from = "#fdba74"; to = "#1e3a8a"; mid = false;
-    lo = "Low engagement"; hi = "High engagement";
+    lo = "55% turnout"; hi = "90% turnout";
   } else if (state.colorBy === "margin" || state.split) {
     from = PARTY_COLORS.R; to = PARTY_COLORS.DFL;
     lo = "R +50%"; hi = "DFL +50%";

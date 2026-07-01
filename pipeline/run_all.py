@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-STEPS = ["01_geography.py", "02_elections.py", "03_demographics.py"]
+STEPS = ["01_geography.py", "02_elections.py", "03_demographics.py", "04_turnout.py"]
 
 
 def main():

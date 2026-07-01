@@ -58,6 +58,26 @@ static web page backed by pre-processed open data.
 Results for wards and districts are computed by summing the official
 precinct‑level vote counts of the precincts inside each area.
 
+## Campaign tools (2026 Plymouth mayor's race)
+
+Beyond the raw data, the app is built to help a campaign target the city:
+
+- **Priority map** (default) shades each precinct by its DFL lean into an
+  action tier — Maximum GOTV, GOTV + Canvass, Canvass + Persuade, Persuade.
+- **Turnout map** shades by real 2022 turnout (ballots cast ÷ registered
+  voters, from MN Secretary of State precinct statistics), surfacing the
+  precincts with the most registered non‑voters.
+- **Per‑precinct campaign context**: click any precinct for its DFL lean,
+  Clark Gregor's 2022 council result there, real 2022 turnout, the
+  "mayor GOTV gap" (registered voters who cast no mayor vote), and a
+  data‑driven recommendation.
+- **Scenario modeler** projects a 2026 Clark‑vs‑Wosje result. Each area
+  starts from a **real** two‑party lean (a past race you choose) and its
+  **real** registered‑voter count, then you adjust transparent assumptions —
+  overall turnout, the partisan environment, and a turnout surge among voters
+  of color (with an explicit, adjustable assumed lean). It is a model, not a
+  poll, and it fabricates no vote counts of its own.
+
 ---
 
 ## Repository layout
@@ -80,6 +100,8 @@ PlymouthMap/
 │   │                            results, filter to Plymouth, aggregate
 │   ├── 03_demographics.py    ← fetch Census ACS data, area-weight tracts
 │   │                            onto each geography
+│   ├── 04_turnout.py         ← fetch MN SoS precinct voter statistics
+│   │                            (registered voters + ballots cast)
 │   └── run_all.py            ← run the whole pipeline in order
 └── .github/workflows/deploy.yml  ← deploys web/ to GitHub Pages
 ```
@@ -149,6 +171,12 @@ What each step does:
    ACS 2019–2023 API; otherwise it falls back to
    [Census Reporter](https://censusreporter.org)'s public mirror of the
    latest ACS release. Either way the same five tables are used.
+4. **`04_turnout.py`** — downloads the MN Secretary of State's precinct
+   statistics file (`pctstats.txt`) for each cycle, filters to Plymouth, and
+   records **registered voters** (pre‑registered at 7 AM plus election‑day
+   registrations) and **ballots cast**, aggregated to wards, districts, and
+   the city. This powers the Turnout map, the mayor GOTV gap, and the
+   registered‑voter base the scenario modeler projects from.
 
 Everything lands in `web/data/` as plain GeoJSON/JSON that the frontend
 reads directly. There is no database and no server-side code.
@@ -160,6 +188,7 @@ reads directly. There is no database and no server-side code.
 | City boundary, wards, precincts | [Hennepin County GIS open data](https://gis-hennepin.hub.arcgis.com/) |
 | MN House / Senate / U.S. House districts, census tracts | [Census TIGERweb](https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb) |
 | Election results (2020, 2022, 2024) | [MN Secretary of State](https://electionresults.sos.mn.gov) precinct results files |
+| Registered voters & ballots cast | MN Secretary of State precinct statistics (`pctstats.txt`) |
 | Demographics | [Census ACS 5‑year API](https://api.census.gov/data/2023/acs/acs5) (or [Census Reporter](https://censusreporter.org) without a key) |
 
 ---

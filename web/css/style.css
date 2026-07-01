@@ -527,3 +527,35 @@ body {
 .action-btn:hover { background: #1e40af; }
 .action-link { font-size: 13px; color: var(--dfl); text-decoration: none; display: block; }
 .action-link:hover { text-decoration: underline; }
+.action-btn-alt { background: #475569; }
+.action-btn-alt:hover { background: #334155; }
+
+/* ---- Scenario modeler ---- */
+.scn-banner {
+  border-radius: 6px; padding: 8px 12px; margin: 8px 0 10px;
+  font-size: 15px; font-weight: 700; text-align: center; color: #fff;
+}
+.scn-banner.clark { background: #1e3a8a; }
+.scn-banner.wosje { background: #7f1d1d; }
+.scn-banner.tie { background: #6b7280; }
+.scn-result { display: flex; gap: 10px; }
+.scn-side {
+  flex: 1; border-radius: 6px; padding: 10px; text-align: center;
+}
+.scn-side.clark { background: #eff6ff; border: 1px solid #bfdbfe; }
+.scn-side.wosje { background: #fef2f2; border: 1px solid #fecaca; }
+.scn-pct { font-size: 24px; font-weight: 700; }
+.scn-side.clark .scn-pct { color: #1e3a8a; }
+.scn-side.wosje .scn-pct { color: #7f1d1d; }
+.scn-nm { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.scn-total { font-size: 12px; color: var(--muted); text-align: center; margin: 6px 0 0; }
+.scn-ctl { margin: 10px 0; }
+.scn-ctl label { display: block; font-size: 12.5px; color: var(--ink); margin-bottom: 4px; }
+.scn-ctl label b { color: var(--dfl); font-variant-numeric: tabular-nums; }
+.scn-ctl input[type="range"] { width: 100%; accent-color: #1e3a8a; }
+.scn-ctl select {
+  width: 100%; padding: 7px 8px; font-size: 13px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+}
+.cand-table td.clark { color: #1e3a8a; font-weight: 600; }
+.cand-table td.wosje { color: #7f1d1d; font-weight: 600; }
