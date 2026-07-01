@@ -191,6 +191,8 @@ function renderWarRoom() {
         <div class="wr-msg-grid">${warroomMessageCards()}</div>
       </div>
 
+      ${warroomEndorsements()}
+
       <div class="wr-section">
         <h2>Go deeper</h2>
         <div class="wr-cta">
@@ -199,4 +201,23 @@ function renderWarRoom() {
         </div>
       </div>
     </div>`;
+}
+
+function warroomEndorsements() {
+  const e = wrImpact?.endorsements;
+  if (!e) return "";
+  const group = (label, arr) => arr && arr.length
+    ? `<div class="wr-endorse-group"><h3>${esc(label)}</h3><ul>${
+        arr.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
+  return `<div class="wr-section">
+    <h2>Who's behind Clark</h2>
+    <p class="wr-sub">A coalition already on the record — labor, Realtors, current and former officials,
+      and community leaders.</p>
+    <div class="wr-endorse-grid">
+      ${group("Elected & former officials", e.officials)}
+      ${group("Labor & organizations", e.organizations)}
+      ${group("Community leaders", e.community)}
+    </div>
+    <p class="fineprint"><a href="${esc(e.source)}" target="_blank" rel="noopener">Full endorsement list →</a></p>
+  </div>`;
 }

@@ -161,6 +161,7 @@ function renderRecordList() {
       <div class="rec-card-foot">
         <span class="rec-cat-badge" style="background:${cat.color}22;color:${cat.color}">${esc(cat.label)}</span>
         <span class="rec-status-badge ${esc(i.status)}">${esc(REC_STATUS_LABEL[i.status] ?? i.status)}</span>
+        ${i.vote ? `<span class="rec-vote-badge">${esc(i.vote)}</span>` : ""}
         <a class="rec-card-source" href="${esc(i.source)}" target="_blank" rel="noopener">Source →</a>
       </div>
     </div>`;
