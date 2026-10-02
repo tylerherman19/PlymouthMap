@@ -8,7 +8,6 @@
   const WARDS = ["Ward 1", "Ward 2", "Ward 3", "Ward 4"];
   const YEARS = [2014, 2016, 2018, 2020, 2022, 2024];
   const EST_MAX = 2020; // 2014-2020 by-ward figures on current lines are estimates
-  const WORKBOOK = "data/Plymouth_Ward_Election_Data_2014-2024.xlsx";
   let D = null;
   const ui = { metric: "ballots", raceKind: "Mayor", raceYear: 2022, lines: "drawn" };
 
@@ -310,7 +309,7 @@
       <p class="wh-kicker">Ward history \u00b7 Plymouth, Minnesota \u00b7 2014\u20132024</p>
       <h1 class="wh-title">Plymouth\u2019s mayor is chosen by the smaller electorate</h1>
       <p class="wh-dek">In the three mayor years (2014, 2018, 2022) Plymouth averaged ${fInt(mid)} ballots. In the three presidential years it averaged ${fInt(pres)}, ${fSgnPct(ratio)} more. Average turnout was ${fPct(tMid)} in mayor years and ${fPct(tPres)} in presidential years. This tab breaks six city elections down by ward.</p>
-      <p class="wh-byline">${esc(methodText)} Source: Minnesota Secretary of State precinct results and state GIS precinct maps. <a href="${WORKBOOK}" download>Download the workbook</a>.</p>
+      <p class="wh-byline">${esc(methodText)} Source: Minnesota Secretary of State precinct results and state GIS precinct maps.</p>
       <div class="wh-facts">
         <div class="wh-fact"><div class="n">${fInt(b22)}</div><div class="l">ballots cast citywide in 2022, the last mayor election. In 2024 it was ${fInt(b24)}, ${fSgnPct(b24 / b22 - 1)}.</div></div>
         <div class="wh-fact"><div class="n">${fPct(md22)}</div><div class="l">of 2022 voters skipped the mayor race, which was unopposed (2018, contested: ${fPct(md18)}).</div></div>
@@ -342,7 +341,7 @@
         <div class="wh-defs"><div><h3 style="margin-top:0">Definitions</h3>${defs.map(p => `<p>${esc(p)}</p>`).join("")}</div>
         <div><h3 style="margin-top:0">Election calendar</h3>${cal.map(p => `<p>${esc(p)}</p>`).join("")}<h3>Sources</h3>
         <ul class="wh-src">${src.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
-        <a class="wh-dl" href="${WORKBOOK}" download>Download the full workbook (.xlsx)</a></div></div>
+        <p class="wh-note">Every figure on this tab is read from a data file exported directly from the workbook; the workbook's full sheet list is described in its Read Me.</p></div></div>
         <p class="wh-note">Suggested citation: Plymouth, MN Municipal Elections by Ward, 2014 to 2024 (prepared October 2026), from Minnesota Secretary of State results and state GIS precinct maps.</p></section>
     </div>`;
     bind();
