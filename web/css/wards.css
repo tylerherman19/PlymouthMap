@@ -1,0 +1,91 @@
+/* Ward History tab: Plymouth city elections by ward, 2014-2024.
+ * Light, flat, hairline rules. Every figure comes from data/ward_history.json,
+ * which is a direct export of the attached workbook. */
+#tab-wards.active { display: block; overflow-y: auto; background: #fff; }
+.wh-root { --wh-ink: #16202c; --wh-mute: #5b6673; --wh-rule: #d5d9de; --wh-faint: #eef0f2;
+  --w1: #1f4e79; --w2: #c0662b; --w3: #3f7d5c; --w4: #7a5195; --wh-acc: #1f4e79;
+  color: var(--wh-ink); }
+.wh-wrap { max-width: 1120px; margin: 0 auto; padding: 36px 28px 90px; }
+
+.wh-kicker { font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--wh-mute); margin: 0 0 10px; }
+.wh-title { font-family: Georgia, "Times New Roman", serif; font-size: 40px; line-height: 1.12; font-weight: 700; margin: 0 0 14px; max-width: 880px; letter-spacing: -.01em; }
+.wh-dek { font-size: 16.5px; line-height: 1.55; color: #323c48; max-width: 760px; margin: 0 0 6px; }
+.wh-byline { font-size: 12.5px; color: var(--wh-mute); margin: 10px 0 0; }
+.wh-byline a, .wh-src a, .wh-note a { color: var(--wh-acc); }
+
+.wh-facts { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--wh-ink); margin: 30px 0 0; }
+.wh-fact { padding: 14px 18px 4px 0; }
+.wh-fact + .wh-fact { padding-left: 18px; border-left: 1px solid var(--wh-rule); }
+.wh-fact .n { font-family: Georgia, serif; font-size: 34px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wh-fact .l { font-size: 12.5px; color: var(--wh-mute); line-height: 1.45; margin-top: 4px; min-height: 54px; }
+
+.wh-sec { margin-top: 58px; }
+.wh-sec h2 { font-family: Georgia, serif; font-size: 25px; line-height: 1.2; margin: 0 0 6px; padding-top: 14px; border-top: 1px solid var(--wh-ink); }
+.wh-sec .wh-sub { font-size: 14.5px; line-height: 1.55; color: #3b4652; max-width: 760px; margin: 0 0 18px; }
+.wh-sec h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--wh-mute); margin: 26px 0 8px; font-weight: 700; }
+
+.wh-controls { display: flex; flex-wrap: wrap; gap: 0; margin: 0 0 14px; }
+.wh-controls button { font: inherit; font-size: 13px; padding: 7px 13px; background: #fff; color: var(--wh-ink);
+  border: 1px solid var(--wh-ink); margin-right: -1px; cursor: pointer; border-radius: 0; }
+.wh-controls button:hover { background: var(--wh-faint); }
+.wh-controls button[aria-pressed="true"] { background: var(--wh-ink); color: #fff; }
+.wh-controls button:focus-visible, .wh-sel:focus-visible { outline: 2px solid var(--wh-acc); outline-offset: 2px; }
+.wh-sel { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--wh-ink); background: #fff; border-radius: 0; }
+
+.wh-chart { display: block; }
+.wh-chart text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; fill: var(--wh-ink); }
+.wh-chart .ax { fill: var(--wh-mute); font-size: 12px; }
+.wh-chart .est-band { fill: #f3f4f6; }
+.wh-chart .band-l { fill: var(--wh-mute); font-size: 11.5px; }
+.wh-legend { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; margin: 6px 0 0; }
+.wh-legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 6px; }
+.wh-legend i.dash { border-top-style: dashed; border-top-color: var(--wh-mute); }
+
+.wh-tw { overflow-x: auto; margin-top: 14px; }
+.wh-t { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+.wh-t caption { text-align: left; font-size: 12.5px; color: var(--wh-mute); padding: 0 0 6px; }
+.wh-t th, .wh-t td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--wh-faint); white-space: nowrap; }
+.wh-t th:first-child, .wh-t td:first-child { text-align: left; }
+.wh-t thead th { white-space: normal; max-width: 110px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--wh-mute); border-bottom: 1px solid var(--wh-ink); font-weight: 600; vertical-align: bottom; }
+.wh-t tr.tot td { font-weight: 700; border-top: 1px solid var(--wh-ink); }
+.wh-t td.est, .wh-t th.est { background: #f6f7f8; }
+.wh-t td.sep, .wh-t th.sep { border-left: 1px solid var(--wh-rule); }
+.wh-t td.win { font-weight: 700; }
+.wh-t td.name { white-space: normal; min-width: 150px; }
+.wh-dot { display: inline-block; width: 9px; height: 9px; margin-right: 7px; vertical-align: baseline; }
+
+.wh-split { display: grid; grid-template-columns: 5fr 6fr; gap: 40px; align-items: start; }
+.wh-split > div { min-width: 0; }
+.wh-bars { margin-top: 6px; }
+.wh-bar { display: grid; grid-template-columns: 78px 1fr 190px; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--wh-faint); font-size: 13px; }
+.wh-bar .lab { font-weight: 600; }
+.wh-bar .track { display: flex; height: 22px; background: var(--wh-faint); }
+.wh-bar .seg { height: 100%; }
+.wh-bar .who { font-size: 12.5px; color: #3b4652; line-height: 1.35; }
+.wh-bar.city .lab, .wh-bar.city .who { font-weight: 700; }
+.wh-bar.city { border-top: 1px solid var(--wh-ink); }
+
+.wh-callout { border-left: 3px solid var(--wh-ink); padding: 4px 0 4px 16px; margin: 18px 0; font-size: 14.5px; line-height: 1.55; max-width: 760px; }
+.wh-note { font-size: 12.5px; color: var(--wh-mute); line-height: 1.55; max-width: 800px; margin: 10px 0 0; }
+.wh-est-flag { color: var(--wh-mute); font-size: 11px; margin-left: 2px; }
+
+.wh-defs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 44px; }
+.wh-defs p { margin: 0 0 9px; font-size: 13px; line-height: 1.55; color: #323c48; }
+.wh-src { font-size: 13px; line-height: 1.6; max-width: 820px; }
+.wh-src li { margin-bottom: 6px; }
+.wh-dl { display: inline-block; margin-top: 8px; padding: 9px 16px; border: 1px solid var(--wh-ink); color: var(--wh-ink); text-decoration: none; font-size: 13.5px; font-weight: 600; }
+.wh-dl:hover { background: var(--wh-ink); color: #fff; }
+
+@media (max-width: 860px) {
+  .wh-wrap { padding: 24px 16px 70px; }
+  .wh-title { font-size: 29px; }
+  .wh-facts { grid-template-columns: 1fr 1fr; }
+  .wh-fact:nth-child(3) { padding-left: 0; border-left: 0; }
+  .wh-fact { padding-bottom: 10px; }
+  .wh-fact .n { font-size: 27px; }
+  .wh-fact .l { min-height: 0; }
+  .wh-split, .wh-defs { grid-template-columns: 1fr; gap: 10px; }
+  .wh-bar { grid-template-columns: 56px 1fr; }
+  .wh-bar .who { grid-column: 1 / -1; padding-bottom: 2px; }
+  .wh-sec { margin-top: 44px; }
+}
