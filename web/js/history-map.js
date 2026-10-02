@@ -28,7 +28,7 @@
  .hm-tierbox .hm-tierrow label{display:inline-flex;gap:6px;align-items:center;font-size:14.5px;color:var(--wh-ink)}
  .hm-tierbox i{width:14px;height:14px;display:inline-block;border:1px solid var(--wh-ink)}
  .hm-tierbox input:disabled+i,.hm-tierbox label.is-off{opacity:.45}
- .hm-label-s{font-size:10.5px;line-height:1.25}.hm-label-s small{font-size:10.5px;font-weight:600}
+ .hm-label-s{font-size:11px;line-height:16px}
  .hm-tierhint{font-size:12.5px;color:var(--wh-mute);max-width:520px;line-height:1.4}
  .hm-detail button{font:inherit;border:0;background:none;padding:0;color:var(--wh-acc);text-decoration:underline;cursor:pointer}
  .hm-controls button{font:inherit;font-size:13px;padding:7px 13px;background:white;border:1px solid var(--wh-ink);border-radius:0;cursor:pointer}
@@ -52,6 +52,7 @@
  const TIER_ROWS=[["t1",1,"2405"],["t1",2,"2485"],["t1",3,"2400"],["t1",4,"2480"],["t1",5,"2500"],["t1",6,"2460"],["t2",7,"2450"],["t2",8,"2475"],["t2",9,"2415"],["base",10,"2435"],["t2",11,"2495"],["t2",12,"2490"],["base",13,"2430"],["base",14,"2425"],["t3",15,"2455"],["t3",16,"2420"],["t3",17,"2410"],["base",18,"2445"],["t3",19,"2465"],["base",20,"2440"],["t3",21,"2470"]];
  const TIERS={};TIER_ROWS.forEach(([k,r,c])=>{TIERS[c]={key:k,rank:r,def:TIER_DEF.find(t=>t.key===k)}});
  const tierShow={t1:true,t2:true,t3:true,base:true};let tierOverlay=false,cityBounds;
+ const emptyTier=()=>level==="precinct"&&!TIER_ROWS.some(r=>tierShow[r[0]]);
  const tierOn=()=>level==="precinct"&&tierOverlay;
  const tierLine=id=>TIERS[id]?`${TIERS[id].def.label} · overall rank ${TIERS[id].rank} of 21`:"";
  let D,map,wardLayer,precinctLayer,labels,year=2022,metric=metrics[1],selected="1",candidate="",raceKind="Mayor",level="ward";
@@ -74,16 +75,17 @@
   const p=D.partisan.current.find(r=>Number(r.year)===year&&r.ward==="Ward 1");const sample=level==="ward"?"1":"2400";
   document.getElementById("hm-race-label").hidden=metric.id!=="share";document.getElementById("hm-candidate-label").hidden=metric.id!=="share";
   document.getElementById("hm-status").textContent=year<2022?`${year}: estimates rebuilt on 2022 ward lines. Dashed boundaries and † mark estimated figures.`:`${year}: actual ${level==="ward"?"ward":"precinct"} totals on ${level==="ward"?"2022 ward":"2022-2030 precinct"} lines.`;
-  document.getElementById("hm-context").textContent=(metric.id==="share"?`${raceKind} · ${candidate||"no race this year"}. Vote share uses all votes cast in this race, including write-ins. `:"")+(metric.id==="dfl"?`Top of ticket: ${p.office}. `:"")+((metric.id==="mayor"||metric.id==="mdrop")&&row(sample)["Mayor on ballot?"]==="No"?"No mayor race in this year. White wards mean not on ballot, not zero.":"Same color thresholds in every year. Darker means a higher value, not a better result.");
+  document.getElementById("hm-context").textContent=(metric.id==="share"?`${raceKind} · ${candidate||"no race this year"}. Vote share uses all votes cast in this race, including write-ins. `:"")+(metric.id==="dfl"?`Top of ticket: ${p.office}. `:"")+((metric.id==="mayor"||metric.id==="mdrop")&&row(sample)["Mayor on ballot?"]==="No"?"No mayor race in this year. White wards mean not on ballot, not zero.":(tierOn()?"Fill colors show targeting tier. Hover or click a precinct for the selected measure.":"Same color thresholds in every year. Darker means a higher value, not a better result."));
   document.getElementById("hm-legend").innerHTML=tierOn()?TIER_DEF.map(t=>`<span><i style="background:${t.color}"></i>${t.label} (${TIER_ROWS.filter(r=>r[0]===t.key).length})${tierShow[t.key]?"":" · hidden"}</span>`).join(""):metric.breaks.slice(0,-1).map((v,i)=>`<span><i style="background:${colors[i]}"></i>${fmt(metric,v)} to ${fmt(metric,metric.breaks[i+1])}</span>`).join("");syncTier();
-  document.querySelector("#hm-table tbody").innerHTML=(level==="ward"?["1","2","3","4"]:PRECINCT_ROWS.filter(r=>Number(r.Year)===year&&(!TIERS[r["Precinct code"]]||tierShow[TIERS[r["Precinct code"]].key])).map(r=>r["Precinct code"])).map(id=>`<tr data-ward="${id}"><th><button type="button" data-select-ward="${id}">${place(id)}</button></th><td></td></tr>`).join("");document.querySelectorAll("[data-select-ward]").forEach(b=>b.addEventListener("click",()=>detail(b.dataset.selectWard)));
-  document.querySelectorAll("#hm-table tbody tr").forEach(tr=>{const id=tr.dataset.ward;const v=val(id);tr.querySelector("td").textContent=fmt(metric,v)+(year<2022&&num(v)?" †":"");tr.querySelector("td").dataset.hmValue=v??"";tr.querySelector("td").dataset.hmYear=year;tr.querySelector("td").dataset.hmMetric=metric.id});detail(selected);
+  document.querySelector("#hm-table tbody").innerHTML=(level==="ward"?["1","2","3","4"]:PRECINCT_ROWS.filter(r=>Number(r.Year)===year&&(!TIERS[r["Precinct code"]]||tierShow[TIERS[r["Precinct code"]].key])).map(r=>r["Precinct code"])).map(id=>`<tr data-ward="${id}"><th><button type="button" data-select-ward="${id}">${place(id)}</button></th><td></td>${level==="precinct"?(TIERS[id]?`<td>${TIERS[id].def.label}</td><td>${TIERS[id].rank}</td>`:"<td></td><td></td>"):""}</tr>`).join("")||`<tr><td colspan="4">No precincts shown. Tick a tier above.</td></tr>`;document.querySelector("#hm-table thead tr").innerHTML=level==="precinct"?"<th>Place</th><th>Value</th><th>Tier</th><th>Rank</th>":"<th>Place</th><th>Value</th>";document.querySelectorAll("[data-select-ward]").forEach(b=>b.addEventListener("click",()=>detail(b.dataset.selectWard)));
+  document.querySelectorAll("#hm-table tbody tr[data-ward]").forEach(tr=>{const id=tr.dataset.ward;const v=val(id);tr.querySelector("td").textContent=fmt(metric,v)+(year<2022&&num(v)?" †":"");tr.querySelector("td").dataset.hmValue=v??"";tr.querySelector("td").dataset.hmYear=year;tr.querySelector("td").dataset.hmMetric=metric.id});if(emptyTier()){document.getElementById("hm-detail").innerHTML='<p class="hm-status">No precincts shown. Tick a tier to bring them back.</p>';document.getElementById("hm-context").textContent="No precincts shown. Tick a tier to bring them back."}else detail(selected);
  }
-function placeSmall(list){const W=64,H=28,placed=[];list.sort((x,y)=>(TIERS[x.layer.feature.properties.id]||{rank:99}).rank-(TIERS[y.layer.feature.properties.id]||{rank:99}).rank);
-  const size=map.getSize();list.forEach(({layer,id,v})=>{const c=layer.getBounds().getCenter(),pt=map.latLngToContainerPoint(c);
-   if(pt.x<W/2||pt.y<H/2||pt.x>size.x-W/2||pt.y>size.y-H/2)return;
-   if(placed.some(q=>Math.abs(q.x-pt.x)<W&&Math.abs(q.y-pt.y)<H))return;placed.push(pt);
-   L.marker(c,{interactive:false,icon:L.divIcon({className:"hm-label hm-label-s",html:`${place(id).replace("Plymouth ","")}<br><small>${fmt(metric,v)}</small>`,iconSize:[W,H],iconAnchor:[W/2,H/2]})}).addTo(labels)})}
+function placeSmall(list){const W=38,H=16,placed=[];list.sort((x,y)=>(TIERS[x.id]||{rank:99}).rank-(TIERS[y.id]||{rank:99}).rank);
+  const offs=[[0,0],[0,-H],[0,H],[-W,0],[W,0],[-W,-H],[W,-H],[-W,H],[W,H],[0,-2*H],[0,2*H],[-W,-2*H],[W,-2*H],[-W,2*H],[W,2*H]];
+  list.forEach(({layer,id})=>{const c=layer.getBounds().getCenter(),pt=map.latLngToContainerPoint(c);
+   const o=offs.find(([dx,dy])=>!placed.some(q=>Math.abs(q.x-(pt.x+dx))<W&&Math.abs(q.y-(pt.y+dy))<H))||offs[0];
+   const at=L.point(pt.x+o[0],pt.y+o[1]);placed.push(at);
+   L.marker(map.containerPointToLatLng(at),{interactive:false,icon:L.divIcon({className:"hm-label hm-label-s",html:place(id).replace(/^.*(P-\d+)$/,"$1"),iconSize:[W,H],iconAnchor:[W/2,H/2]})}).addTo(labels)})}
  function syncTier(){const off=year<2022;document.querySelectorAll("[data-tier],#hm-tier-overlay").forEach(c=>{c.disabled=off;c.parentElement.classList.toggle("is-off",off)});
   const shown=level==="precinct"?TIER_ROWS.filter(r=>tierShow[r[0]]).length:21;
   document.getElementById("hm-tierhint").textContent=off?"Tiers are set for the 21 precincts, so they need the 2022 or 2024 precinct view. Pick 2022 or 2024 to use them.":level!=="precinct"?"Tiers are precinct level. Ticking a box switches the map to precinct view.":`Showing ${shown} of 21 precincts. Tier overlay is ${tierOverlay?"on":"off"}.`}
