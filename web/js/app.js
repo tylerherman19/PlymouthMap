@@ -387,7 +387,7 @@ function renderCampaignHome() {
       <div style="margin-bottom:12px">
         <div class="race-badge">2026 Mayor's Race</div>
         <div class="candidate-matchup">
-          <span class="cand-clark">Clark Gregor</span>
+          <span class="cand-clark">Candidate</span>
           <span class="cand-vs">vs.</span>
           <span class="cand-wosje">Jeff Wosje</span>
         </div>
@@ -1435,7 +1435,7 @@ function renderScenarioPanel() {
 
     ${banner}
     <div class="scn-result">
-      <div class="scn-side clark"><div class="scn-pct">${clarkPct}</div><div class="scn-nm">Clark Gregor</div></div>
+      <div class="scn-side clark"><div class="scn-pct">${clarkPct}</div><div class="scn-nm">Candidate</div></div>
       <div class="scn-side wosje"><div class="scn-pct">${wosjePct}</div><div class="scn-nm">Jeff Wosje</div></div>
     </div>
     <p class="scn-total">${proj.ballots ? fmt(proj.ballots) + " projected ballots · " + fmt(proj.clark) + " Clark / " + fmt(proj.wosje) + " Wosje" : ""}</p>
