@@ -187,7 +187,7 @@ function renderWarRoom() {
 
       <div class="wr-section">
         <h2>The message</h2>
-        <p class="wr-sub">Real record, matched to the audience — see the full record on the Clark's Record tab.</p>
+        <p class="wr-sub">Real record, matched to the audience — see the full record on the Voting Record tab.</p>
         <div class="wr-msg-grid">${warroomMessageCards()}</div>
       </div>
 
@@ -197,7 +197,7 @@ function renderWarRoom() {
         <h2>Go deeper</h2>
         <div class="wr-cta">
           <button class="wr-btn" onclick="showTab('map')">Open the interactive map →</button>
-          <button class="wr-btn alt" onclick="showTab('record')">See Clark's full record →</button>
+          <button class="wr-btn alt" onclick="showTab('record')">See the full record →</button>
         </div>
       </div>
     </div>`;
