@@ -124,7 +124,7 @@ function renderWarRoom() {
       <div class="wr-hero">
         <div class="race-badge">2026 Mayor's Race · Election Day ${esc(ELECTION_DAY)}</div>
         <div class="candidate-matchup">
-          <span class="cand-clark">Clark Gregor</span>
+          <span class="cand-clark">Candidate</span>
           <span class="cand-vs">vs.</span>
           <span class="cand-wosje">Jeff Wosje</span>
         </div>
