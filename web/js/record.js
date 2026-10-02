@@ -56,8 +56,8 @@ function renderRecord() {
   el.innerHTML = `
     <div class="rec-wrap">
       <div class="rec-hero">
-        <h2>Clark's record in Plymouth</h2>
-        <p>Every item below is a real, sourced action from city council coverage and Clark's own campaign
+        <h2>Council record in Plymouth</h2>
+        <p>Every item below is a real, sourced action from city council coverage and the candidate's own campaign
           site — a vote, a finished project, or a named in-progress initiative. Nothing is invented; anything
           not yet built or funded is labeled "Proposed."</p>
       </div>
