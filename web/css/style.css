@@ -70,20 +70,35 @@ body {
 #layer-picker {
   grid-area: picker;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 16px 10px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
-.picker-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
-.picker-gap { margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
+.picker-selects { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.picker-field { display: flex; flex-direction: column; gap: 3px; }
+.picker-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+#layer-picker select {
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 8px;
+  max-width: 270px;
+  cursor: pointer;
+}
+#layer-picker select:focus-visible, #layer-picker button:focus-visible { outline: 2px solid var(--dfl); outline-offset: 1px; }
+.picker-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 #layer-picker button {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 999px;
-  padding: 5px 13px;
+  padding: 6px 13px;
   font-size: 13px;
   cursor: pointer;
   color: var(--ink);
@@ -94,6 +109,7 @@ body {
   border-color: var(--ink);
   color: #fff;
 }
+#legend .legend-title { font-weight: 600; font-size: 11.5px; color: var(--ink); }
 
 #map-wrap { grid-area: map; position: relative; min-height: 300px; }
 #map { height: 100%; background: #eef2f5; }
@@ -358,7 +374,7 @@ body {
   border-radius: 6px;
   background: rgba(255,255,255,0.95);
 }
-#split-left { left: 10px; }
+#split-left { left: 54px; }  /* clear of the zoom buttons */
 #split-right { right: 10px; }
 
 .ward-breakdown { margin: 6px 0 2px; }
@@ -416,16 +432,18 @@ body {
     grid-template-rows: auto 46vh minmax(0, 1fr);
     grid-template-areas: "picker" "map" "panel";
   }
-  #layer-picker {
+  #layer-picker { padding: 8px 12px; gap: 8px; }
+  .picker-selects { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 6px; width: 100%; }
+  #layer-picker select { max-width: none; width: 100%; font-size: 16px; padding: 6px 6px; }
+  .picker-actions {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 8px 12px;
     scrollbar-width: none;
+    width: 100%;
   }
-  #layer-picker::-webkit-scrollbar { display: none; }
+  .picker-actions::-webkit-scrollbar { display: none; }
   #layer-picker button { flex: none; padding: 7px 14px; }
-  .picker-label { flex: none; }
   #panel { border-left: none; border-top: 1px solid var(--line); }
   #panel-content { padding: 14px 14px 40px; }
   #legend {
@@ -625,7 +643,7 @@ body {
 }
 .wr-callout strong { color: #0c4a6e; }
 
-.wr-table-wrap { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.wr-table-wrap { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
 .wr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .wr-table th, .wr-table td {
   text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line);
@@ -634,6 +652,7 @@ body {
 .wr-table th { background: var(--bg); color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
 .wr-table tr:last-child td { border-bottom: none; }
 .wr-table td.num { font-variant-numeric: tabular-nums; text-align: right; }
+.wr-table th.num { text-align: right; }
 .wr-tier-chip {
   display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px;
   border-radius: 999px;
@@ -675,6 +694,8 @@ body {
 .rec-bio-card p { margin: 0; font-size: 13px; line-height: 1.5; }
 
 .rec-layout { display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; align-items: start; }
+/* Keep the map in view while the full list scrolls past it. */
+.rec-layout > :first-child { position: sticky; top: 16px; }
 #record-map { height: 440px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #eef2f5; }
 .rec-map-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 11.5px; color: var(--muted); }
 .rec-map-legend .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; }
@@ -687,7 +708,7 @@ body {
 .rec-filter-btn:hover { border-color: #9ca3af; }
 .rec-filter-btn.active { background: var(--ink); border-color: var(--ink); color: #fff; }
 
-.rec-list { display: flex; flex-direction: column; gap: 10px; max-height: 440px; overflow-y: auto; padding-right: 4px; }
+.rec-list { display: flex; flex-direction: column; gap: 10px; }
 .rec-card {
   border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
   background: #fff; cursor: pointer; transition: border-color .1s;
@@ -716,6 +737,32 @@ body {
 
 @media (max-width: 860px) {
   .rec-layout { grid-template-columns: 1fr; }
+  .rec-layout > :first-child { position: static; }
   #record-map { height: 300px; }
   .rec-list { max-height: none; }
+}
+
+/* Explanations under the two tier systems, and the targeting-plan block
+   inside a precinct's campaign context. */
+.tier-explain { font-size: 12px; color: var(--muted); line-height: 1.45; margin: -2px 0 8px; }
+.targeting-ctx { margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(0,0,0,0.15); }
+
+.wr-sys { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-left: 6px; white-space: nowrap; }
+.wr-tierkey { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; margin: 0 0 10px; }
+.wr-tierkey span { display: inline-flex; align-items: center; gap: 6px; }
+.wr-tierkey i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* Leaflet maps are focusable for keyboard use; only show the ring for keyboard focus. */
+.leaflet-container:focus:not(:focus-visible) { outline: none; }
+@media (max-width: 860px) {
+  #map-wrap .leaflet-control-attribution { font-size: 9.5px; max-width: 55%; text-align: right; }
+}
+
+/* Phone: let Path to Win tables wrap instead of scrolling sideways. */
+@media (max-width: 600px) {
+  .wr-table th, .wr-table td { white-space: normal; padding: 8px 8px; }
+  .wr-table th { font-size: 10px; letter-spacing: 0.02em; }
+  .wr-table td { font-size: 12.5px; }
+  .wr-table .wr-tier-chip { display: table; margin: 3px 0 0; }
+  .wr-sys { display: block; margin: 2px 0 0; }
 }

@@ -17,7 +17,13 @@ const OTHER_COLOR = "#9ca3af";
 // Distinct colors for head-to-head mode when both candidates share a party color.
 const DUEL_A = "#0e7490", DUEL_B = "#c2410c";
 
-// Campaign priority tiers based on 2024 DFL presidential share.
+// Two precinct tier systems live on this site, measuring different things:
+//  * PARTISAN-LEAN tiers (below): computed here from 2024 DFL presidential
+//    share alone. They say how Democratic a precinct is, not how Clark ran.
+//  * TARGETING tiers (data/targeting_tiers.json): the digital targeting plan's
+//    Tier 1/2/3/Base ranking, built on the gap between DFL share and Clark's
+//    2022 vote plus presidential-only voters. Ward History uses the same tiers.
+// Partisan-lean tiers based on 2024 DFL presidential share.
 // Plymouth is strongly DFL (57–70% across all precincts), so tiers are calibrated for that range.
 const PRIORITY_TIERS = [
   { id: "strongbase", min: 0.65, label: "Strong DFL Base", action: "Maximum GOTV",       mapColor: "#15803d", bg: "#dcfce7", textColor: "#14532d" },
@@ -28,7 +34,8 @@ const PRIORITY_TIERS = [
 
 const VIEWS = {
   margin:     { label: "Vote margin" },
-  priority:   { label: "Campaign priority" },
+  priority:   { label: "Partisan-lean tier" },
+  targeting:  { label: "Targeting tier" },
   turnout:    { label: "Voter turnout (2022)", lo: "#fdba74", hi: "#1e3a8a",
                 format: v => (100 * v).toFixed(0) + "%" },
   income:     { label: "Median household income", lo: "#edf8e9", hi: "#00541f",
@@ -46,6 +53,7 @@ const state = {
   elections: null,
   demographics: null,
   turnout: null,     // registration + ballots cast per area/cycle
+  targeting: null,   // targeting-plan tiers per precinct (data/targeting_tiers.json)
   activeLayer: "precincts",
   colorBy: "priority",   // default to campaign priority view
   leafletLayer: null,
@@ -74,7 +82,6 @@ const SCENARIO_DEFAULTS = {
 const SCENARIO_BASELINES = {
   pres2024: { cycle: "2024", label: "2024 President", match: o => o.startsWith("U.S. President") },
   gov2022:  { cycle: "2022", label: "2022 Governor", match: o => o.startsWith("Governor") },
-  pres2020: { cycle: "2020", label: "2020 President", match: o => o.startsWith("U.S. President") },
 };
 
 // One-tap starting points. Each fully specifies the model inputs.
@@ -108,6 +115,14 @@ function dflShare(kind, id) {
     if (c.party === "DFL") dfl += c.votes;
   });
   return total > 0 ? dfl / total : null;
+}
+
+// Targeting-plan tier for a precinct, or null (other layers have none).
+function targetingTierFor(kind, id) {
+  if (kind !== "precinct" || !state.targeting) return null;
+  const row = state.targeting.precincts.find(p => p.code === id);
+  if (!row) return null;
+  return { ...state.targeting.tiers.find(t => t.id === row.tier), row };
 }
 
 function priorityTierFor(kind, id) {
@@ -208,15 +223,21 @@ function scenarioCitywide() {
 
 /* --------- init --------- */
 
+// Light, keyless basemap. (CARTO's basemaps now require an API key and serve
+// "API KEY REQUIRED" tiles without one.)
+function addBasemap(map) {
+  return L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+      attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+      maxZoom: 16,
+    }).addTo(map);
+}
+
 init();
 
 async function init() {
   state.map = L.map("map", { zoomSnap: 0.25 });
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: "abcd",
-    maxZoom: 17,
-  }).addTo(state.map);
+  addBasemap(state.map);
 
   for (const name of ["splitLeft", "splitRight"]) {
     state.map.createPane(name).style.zIndex = 380;
@@ -227,16 +248,26 @@ async function init() {
   demoPane.style.pointerEvents = "none";
 
   const files = ["data/city.geojson", "data/elections.json", "data/demographics.json",
-                 "data/turnout.json", ...Object.values(LAYERS).map(l => l.file)];
-  const [city, elections, demographics, turnout, ...layerData] =
+                 "data/turnout.json", "data/targeting_tiers.json",
+                 ...Object.values(LAYERS).map(l => l.file)];
+  const [city, elections, demographics, turnout, targeting, ...layerData] =
     await Promise.all(files.map(f => fetch(f).then(r => {
       if (!r.ok) throw new Error(`Failed to load ${f}`);
       return r.json();
     })));
 
+  // Precinct codes were reused when Plymouth redrew its wards and precincts in
+  // 2022, so a 2020 result keyed "2400" describes different ground than the
+  // 2022 precinct "2400" drawn on this map. Drop 2020 precinct and ward results
+  // rather than paint them onto the wrong shapes. (The Ward History tab has
+  // 2014-2020 rebuilt on current ward lines; citywide 2020 results stay.)
+  for (const kind of ["precinct", "ward"]) {
+    for (const unit of Object.values(elections.results[kind] ?? {})) delete unit["2020"];
+  }
   state.elections = elections;
   state.demographics = demographics;
   state.turnout = turnout;
+  state.targeting = targeting;
   Object.keys(LAYERS).forEach((name, i) => { state.data[name] = layerData[i]; });
   state.dataReady = true;
   document.dispatchEvent(new CustomEvent("appdata"));
@@ -263,22 +294,16 @@ async function init() {
 
   buildCandidateIndex();
 
-  document.querySelectorAll("#layer-picker button[data-layer]").forEach(btn => {
-    btn.addEventListener("click", () => setLayer(btn.dataset.layer));
-  });
-  document.querySelectorAll("#layer-picker button[data-view]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (state.mode === "candidate") exitCandidateMode(true);
-      if (state.split) exitSplit();
-      // Clicking the already-active view toggles back to the default
-      // (Priority), so any view can be "turned off".
-      state.colorBy = (btn.dataset.view === state.colorBy && btn.dataset.view !== "priority")
-        ? "priority" : btn.dataset.view;
-      document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
-        b.classList.toggle("active", b.dataset.view === state.colorBy));
-      refreshStyles();
-      renderLegend();
-    });
+  document.getElementById("layer-select").addEventListener("change", e => setLayer(e.target.value));
+  document.getElementById("view-select").addEventListener("change", e => {
+    if (state.mode === "candidate") exitCandidateMode(true);
+    if (state.split) exitSplit();
+    if (state.scenario) exitScenario();
+    state.colorBy = e.target.value;
+    // Targeting tiers only exist for precincts.
+    if (state.colorBy === "targeting" && state.activeLayer !== "precincts") setLayer("precincts");
+    refreshStyles();
+    renderLegend();
   });
 
   // The panel re-renders constantly, so handle its links by delegation.
@@ -322,10 +347,8 @@ async function init() {
                document.getElementById("cand-results"),
                cand => enterCandidate(cand));
 
-  document.querySelectorAll("#layer-picker button[data-overlay]").forEach(btn => {
-    btn.addEventListener("click", () => setOverlay(
-      state.overlay === btn.dataset.overlay ? null : btn.dataset.overlay));
-  });
+  document.getElementById("overlay-select").addEventListener("change", e =>
+    setOverlay(e.target.value || null));
   document.getElementById("split-toggle").addEventListener("click", toggleSplit);
   document.getElementById("export-btn").addEventListener("click", exportSlide);
   initSplitControl();
@@ -334,6 +357,7 @@ async function init() {
   const clarkTopBtn = document.getElementById("topbar-clark-btn");
   if (clarkTopBtn) {
     clarkTopBtn.addEventListener("click", () => {
+      if (state.mode === "candidate") { exitCandidateMode(true); return; }
       const clark = state.candidateIndex.find(c => c.name.includes("Gregor") && c.cycle === "2022");
       if (clark) enterCandidate(clark);
     });
@@ -342,9 +366,7 @@ async function init() {
   if (scenarioTopBtn) scenarioTopBtn.addEventListener("click", () =>
     state.scenario ? exitScenario() : enterScenario());
 
-  // Mark priority as active by default
-  document.querySelectorAll("#layer-picker button[data-view]").forEach(b =>
-    b.classList.toggle("active", b.dataset.view === "priority"));
+  document.getElementById("view-select").value = state.colorBy;
 
   setLayer("precincts");
   renderCampaignHome();
@@ -378,6 +400,17 @@ function renderCampaignHome() {
       <span class="tier-dot" style="background:${t.mapColor}"></span>
       <span class="tier-row-label">${esc(t.label)}</span>
       <span class="tier-row-count">${count} precinct${count !== 1 ? "s" : ""}</span>
+      <span class="tier-row-action">${esc(t.action)}</span>
+    </div>`;
+  }).join("");
+
+  const tgt = state.targeting;
+  const targetRows = (tgt?.tiers ?? []).map(t => {
+    const n = tgt.precincts.filter(p => p.tier === t.id).length;
+    return `<div class="tier-row">
+      <span class="tier-dot" style="background:${t.color}"></span>
+      <span class="tier-row-label">${esc(t.label)}</span>
+      <span class="tier-row-count">${n} precinct${n !== 1 ? "s" : ""}</span>
       <span class="tier-row-action">${esc(t.action)}</span>
     </div>`;
   }).join("");
@@ -422,7 +455,14 @@ function renderCampaignHome() {
         turnout, the partisan environment, and who shows up change the result.
       </div>` : ""}
 
-      <h3 class="section-title">Precinct priorities</h3>
+      <h3 class="section-title">Targeting tiers</h3>
+      <p class="tier-explain">From the digital targeting plan: where DFL voters most need to learn
+        Clark's name, plus where presidential-only voters are. Pick <b>Targeting tier</b> under Color by.</p>
+      <div class="tier-legend">${targetRows}</div>
+
+      <h3 class="section-title">Partisan-lean tiers</h3>
+      <p class="tier-explain">How Democratic each precinct voted for president in 2024. This measures
+        the electorate, not Clark's own support. Pick <b>Partisan-lean tier</b> under Color by.</p>
       <div class="tier-legend">${tierRows}</div>
 
       <div class="home-actions">
@@ -431,7 +471,8 @@ function renderCampaignHome() {
         <a href="#" id="citywide-link" class="action-link">View full citywide results →</a>
       </div>
 
-      <p class="fineprint">Click any precinct on the map for campaign context and a recommended action. Use "Priority" in the Color by toolbar to see the priority map, or "Turnout" to find precincts with the most registered non-voters.</p>
+      <p class="fineprint">Click any precinct on the map for its numbers, both tiers, and a suggested
+        approach. Use <b>2022 turnout</b> under Color by to find the precincts with the most registered non-voters.</p>
     </div>`;
 }
 
@@ -440,8 +481,7 @@ function renderCampaignHome() {
 function setLayer(name) {
   state.activeLayer = name;
   state.selectedId = null;
-  document.querySelectorAll("#layer-picker button").forEach(b =>
-    b.classList.toggle("active", b.dataset.layer === name || b.dataset.view === state.colorBy));
+  document.getElementById("layer-select").value = name;
 
   if (state.leafletLayer) state.map.removeLayer(state.leafletLayer);
   const kind = LAYERS[name].kind;
@@ -464,10 +504,13 @@ function setLayer(name) {
     },
   }).addTo(state.map);
 
+  if (state.split) fillSplitOptions();
   rebuildSplitLayers();
   rebuildOverlayLayer();
   if (state.mode === "candidate") renderCandidatePanel();
   else if (state.scenario) renderScenarioPanel();
+  else if (state.dataReady && document.getElementById("panel-content").querySelector(".area-name"))
+    renderCampaignHome();  // the selected area belonged to the old layer
 }
 
 function tooltipFor(kind, props) {
@@ -496,6 +539,10 @@ function tooltipFor(kind, props) {
       if (tier) html += `<br>${esc(tier.label)} — ${esc(tier.action)}`;
       const share = dflShare(kind, props.id);
       if (share !== null) html += `<br>${(100 * share).toFixed(1)}% DFL lean`;
+    } else if (state.colorBy === "targeting") {
+      const t = targetingTierFor(kind, props.id);
+      html += t ? `<br>${esc(t.label)} — ${esc(t.action)}<br>Rank ${t.row.rank} of 21 · Clark 2022: ${(100 * t.row.gregor2022).toFixed(1)}%`
+                : `<br>Targeting tiers are set for precincts only`;
     } else if (state.colorBy === "turnout") {
       const rate = turnoutRate(kind, props.id, "2022");
       if (rate !== null) html += `<br>${(100 * rate).toFixed(0)}% turnout (2022)`;
@@ -521,7 +568,10 @@ function refreshStyles() {
 function cycleMargin(kind, id, cycleId) {
   const races = state.elections.results[kind]?.[id]?.[cycleId];
   if (!races) return null;
-  const race = races.find(r => r.office.startsWith("U.S. President")) || races[0];
+  // Top of the ticket: President, else Governor (midterms), else U.S. Senate.
+  const race = races.find(r => r.office.startsWith("U.S. President"))
+    || races.find(r => r.office.startsWith("Governor"))
+    || races.find(r => r.office.startsWith("U.S. Senator"));
   if (!race) return null;
   let dfl = 0, gop = 0;
   race.candidates.forEach(c => {
@@ -610,6 +660,9 @@ function styleFor(kind, id) {
   } else if (state.colorBy === "priority") {
     const tier = priorityTierFor(kind, id);
     if (tier) { fill = tier.mapColor; opacity = 0.75; }
+  } else if (state.colorBy === "targeting") {
+    const t = targetingTierFor(kind, id);
+    if (t) { fill = t.color; opacity = 0.8; }
   } else if (state.colorBy === "turnout") {
     const rate = turnoutRate(kind, id, "2022");
     if (rate !== null) {
@@ -709,7 +762,23 @@ function renderLegend() {
         <span>${esc(t.label)}</span>
         <span class="tier-action-small">— ${esc(t.action)}</span>
       </div>`).join("");
-    el.innerHTML = `<div class="legend-priority">${swatches}</div>` + overlayLegendHtml();
+    el.innerHTML = `<div class="legend-title">Partisan-lean tiers · 2024 DFL presidential share</div>
+      <div class="legend-priority">${swatches}</div>` + overlayLegendHtml();
+    return;
+  }
+  if (state.colorBy === "targeting") {
+    const tiers = state.targeting?.tiers ?? [];
+    const count = id => state.targeting.precincts.filter(p => p.tier === id).length;
+    const swatches = tiers.map(t =>
+      `<div class="legend-priority-row">
+        <span class="swatch" style="background:${t.color}"></span>
+        <span>${esc(t.label)} (${count(t.id)})</span>
+        <span class="tier-action-small">— ${esc(t.action)}</span>
+      </div>`).join("");
+    const note = state.activeLayer !== "precincts"
+      ? `<div class="legend-note">Switch to Precincts to see targeting tiers.</div>` : "";
+    el.innerHTML = `<div class="legend-title">Targeting tiers · digital targeting plan</div>
+      <div class="legend-priority">${swatches}</div>${note}` + overlayLegendHtml();
     return;
   }
   if (state.colorBy === "turnout") {
@@ -819,7 +888,7 @@ function campaignContextHtml(kind, id) {
   return `<div class="campaign-context" style="background:${tier?.bg ?? "#f9fafb"};border:1px solid ${tier?.mapColor ?? "#e5e7eb"}">
     <div class="campaign-tier-badge" style="color:${tier?.textColor ?? "#374151"}">
       <span style="width:10px;height:10px;border-radius:50%;background:${tier?.mapColor ?? "#9ca3af"};flex:none;display:inline-block"></span>
-      ${esc(tier?.label ?? "No data")} — ${esc(tier?.action ?? "")}
+      Partisan lean: ${esc(tier?.label ?? "No data")} — ${esc(tier?.action ?? "")}
     </div>
     <div class="campaign-stats">
       ${share !== null ? `<span><span>DFL lean (2024)</span><b>${(100 * share).toFixed(1)}%</b></span>` : ""}
@@ -828,6 +897,24 @@ function campaignContextHtml(kind, id) {
       ${gap ? `<span><span>2022 mayor GOTV gap</span><b>${fmt(gap.gap)} didn't vote for mayor</b></span>` : ""}
     </div>
     <p class="campaign-story">${esc(story)}</p>
+    ${targetingContextHtml(kind, id)}
+  </div>`;
+}
+
+function targetingContextHtml(kind, id) {
+  const t = targetingTierFor(kind, id);
+  if (!t) return "";
+  const r = t.row;
+  return `<div class="targeting-ctx">
+    <div class="campaign-tier-badge" style="color:#1f2937">
+      <span style="width:10px;height:10px;border-radius:2px;background:${t.color};flex:none;display:inline-block"></span>
+      Targeting plan: ${esc(t.label)} · rank ${r.rank} of 21 — ${esc(t.action)}
+    </div>
+    <div class="campaign-stats">
+      <span><span>DFL share, 2022 Governor</span><b>${(100 * r.dflGov2022).toFixed(1)}%</b></span>
+      <span><span>Clark, 2022 at-large</span><b>${(100 * r.gregor2022).toFixed(1)}%</b></span>
+      <span><span>Voted 2024, not 2022</span><b>${fmt(r.presOnly)} (${fmt(r.ballots2024)} vs ${fmt(r.ballots2022)} ballots)</b></span>
+    </div>
   </div>`;
 }
 
@@ -880,8 +967,9 @@ function electionsHtml(unit) {
     html += `<div class="cycle"><h3>${esc(cycle.name)}</h3>`;
     const races = unit[cycle.id];
     if (!races) {
-      html += `<p class="no-data">No results under these boundaries —
-               district lines changed with the 2022 redistricting.</p></div>`;
+      html += `<p class="no-data">No results on these boundaries — precinct, ward and
+               district lines were redrawn in 2022. The Ward History tab rebuilds
+               2014–2020 city races on today's ward lines.</p></div>`;
       continue;
     }
     races.forEach(r => { html += raceHtml(r, cycle.id); });
@@ -958,7 +1046,8 @@ function raceHtml(race, cycleId) {
 function buildCandidateIndex() {
   const out = [];
   const cityRaces = state.elections.results.city.plymouth;
-  for (const cycle of state.elections.cycles) {
+  // Only cycles that can be mapped on today's precinct lines (2022+).
+  for (const cycle of state.elections.cycles.filter(c => c.id >= "2022")) {
     (cityRaces[cycle.id] || []).forEach(race => {
       race.candidates.forEach(c => {
         if (c.party === "WI") return;
@@ -1017,6 +1106,8 @@ function duelColors() {
 
 function enterCandidate(cand) {
   if (state.split) exitSplit();
+  if (state.scenario) exitScenario();
+  document.getElementById("topbar-clark-btn")?.classList.add("active");
   state.mode = "candidate";
   state.candA = cand;
   state.candB = null;
@@ -1026,6 +1117,7 @@ function enterCandidate(cand) {
 
 function exitCandidateMode(rerender) {
   state.mode = "area";
+  document.getElementById("topbar-clark-btn")?.classList.remove("active");
   state.candA = state.candB = null;
   state.selectedId = null;
   if (rerender) {
@@ -1229,11 +1321,28 @@ function renderCandidatePanel() {
 
 /* ---------- split-screen year comparison ---------- */
 
-function initSplitControl() {
-  const cycles = state.elections.cycles.map(c => c.id).sort();
+// Election years that have results for the layer on screen.
+function splitCycles() {
+  const kind = LAYERS[state.activeLayer].kind;
+  return state.elections.cycles.map(c => c.id).sort().filter(cy =>
+    state.data[state.activeLayer].features.some(f => cycleMargin(kind, f.properties.id, cy) !== null));
+}
+
+function fillSplitOptions() {
+  const cycles = splitCycles();
   for (const side of ["left", "right"]) {
     const sel = document.getElementById(`split-${side}`);
     sel.innerHTML = cycles.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+    if (state.split) {
+      if (!cycles.includes(state.split[side])) state.split[side] = side === "left" ? cycles[0] : cycles[cycles.length - 1];
+      sel.value = state.split[side];
+    }
+  }
+}
+
+function initSplitControl() {
+  for (const side of ["left", "right"]) {
+    const sel = document.getElementById(`split-${side}`);
     sel.addEventListener("change", () => {
       state.split[side] = sel.value;
       rebuildSplitLayers();
@@ -1268,10 +1377,10 @@ function initSplitControl() {
 function toggleSplit() {
   if (state.split) { exitSplit(); return; }
   if (state.mode === "candidate") exitCandidateMode(true);
-  const cycles = state.elections.cycles.map(c => c.id).sort();
+  if (state.scenario) exitScenario();
+  const cycles = splitCycles();
   state.split = { left: cycles[0], right: cycles[cycles.length - 1], t: 0.5 };
-  document.getElementById("split-left").value = state.split.left;
-  document.getElementById("split-right").value = state.split.right;
+  fillSplitOptions();
   document.getElementById("split-control").hidden = false;
   document.getElementById("split-toggle").classList.add("active");
   rebuildSplitLayers();
@@ -1332,8 +1441,7 @@ function updateSplitClip() {
 
 function setOverlay(name) {
   state.overlay = name;
-  document.querySelectorAll("#layer-picker button[data-overlay]").forEach(b =>
-    b.classList.toggle("active", b.dataset.overlay === name));
+  document.getElementById("overlay-select").value = name ?? "";
   rebuildOverlayLayer();
   renderLegend();
 }
@@ -1520,6 +1628,10 @@ function exportFill(kind, id, cycleId) {
     const tier = priorityTierFor(kind, id);
     return tier ? tier.mapColor : null;
   }
+  if (state.colorBy === "targeting") {
+    const t = targetingTierFor(kind, id);
+    return t ? t.color : null;
+  }
   if (state.colorBy === "turnout") {
     const rate = turnoutRate(kind, id, "2022");
     if (rate === null) return null;
@@ -1551,7 +1663,8 @@ function exportTitle() {
       : `${shortName(state.candA.name)} — vote share (${state.candA.cycle})`;
   }
   if (state.split) return `Vote margin: ${state.split.left} vs ${state.split.right}`;
-  if (state.colorBy === "priority") return "Campaign Priority Map";
+  if (state.colorBy === "priority") return "Partisan-Lean Tiers (2024 DFL share)";
+  if (state.colorBy === "targeting") return "Targeting Tiers";
   if (state.colorBy === "turnout") return "Voter Turnout (2022)";
   return state.colorBy === "margin" ? "Vote margin" : VIEWS[state.colorBy].label;
 }
@@ -1570,17 +1683,19 @@ function exportLegend(ctx, x, y, w) {
       const max = maxShare(LAYERS[state.activeLayer].kind);
       lo = "0%"; hi = max ? (100 * max).toFixed(0) + "%" : "";
     }
-  } else if (state.colorBy === "priority") {
+  } else if (state.colorBy === "priority" || state.colorBy === "targeting") {
     // Draw discrete swatches instead of gradient
-    const tileW = w / PRIORITY_TIERS.length;
-    PRIORITY_TIERS.forEach((t, i) => {
+    const tiers = state.colorBy === "priority"
+      ? PRIORITY_TIERS : state.targeting.tiers.map(t => ({ ...t, mapColor: t.color }));
+    const tileW = w / tiers.length;
+    tiers.forEach((t, i) => {
       ctx.fillStyle = t.mapColor;
       ctx.fillRect(x + i * tileW, y, tileW, 22);
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = "#1f2937";
       ctx.font = "500 18px -apple-system, 'Segoe UI', Arial, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(t.label, x + i * tileW + tileW / 2, y + 11);
+      ctx.fillText(t.label, x + i * tileW + tileW / 2, y + 42);
     });
     return;
   } else if (state.colorBy === "turnout") {

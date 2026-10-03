@@ -103,11 +103,7 @@ function renderRecord() {
 
 function initRecordMap() {
   recMap = L.map("record-map", { zoomSnap: 0.25, scrollWheelZoom: false });
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: "abcd",
-    maxZoom: 17,
-  }).addTo(recMap);
+  addBasemap(recMap);
 
   const wardsLayer = L.geoJSON(state.data.wards, {
     style: () => ({ color: "#94a3b8", weight: 1.5, fillColor: "#e2e8f0", fillOpacity: 0.35 }),

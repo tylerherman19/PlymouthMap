@@ -7,8 +7,8 @@
   <meta name="description"
         content="Plymouth Map: an interactive map of Plymouth, Minnesota precincts, wards and election history.">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="css/style.css?v=20260701b">
-  <link rel="stylesheet" href="css/wards.css?v=20261002a">
+  <link rel="stylesheet" href="css/style.css?v=20261003a">
+  <link rel="stylesheet" href="css/wards.css?v=20261003a">
 </head>
 <body>
   <header id="site-header">
@@ -31,29 +31,52 @@
   </section>
 
   <section id="tab-map" class="tab-panel" data-tab-panel="map">
-    <nav id="layer-picker" aria-label="Map layer">
-      <span class="picker-label">Show</span>
-      <button data-layer="precincts" class="active">Precincts</button>
-      <button data-layer="wards">Wards</button>
-      <button data-layer="house">MN House</button>
-      <button data-layer="senate">MN Senate</button>
-      <button data-layer="congress">U.S. House</button>
-      <span class="picker-label picker-gap">Color by</span>
-      <button data-view="priority" class="active view-btn">Priority</button>
-      <button data-view="margin" class="view-btn">Vote margin</button>
-      <button data-view="turnout" class="view-btn">Turnout</button>
-      <button data-view="income" class="view-btn">Income</button>
-      <button data-view="age" class="view-btn">Age</button>
-      <button data-view="diversity" class="view-btn">Diversity</button>
-      <span class="picker-label picker-gap">Overlay</span>
-      <button data-overlay="income" class="overlay-btn">Income</button>
-      <button data-overlay="age" class="overlay-btn">Age</button>
-      <button data-overlay="diversity" class="overlay-btn">Diversity</button>
-      <span class="picker-gap"></span>
-      <button id="topbar-scenario-btn" title="Model 2026 turnout and environment scenarios">Scenario</button>
-      <button id="topbar-clark-btn" title="Map the candidate's 2022 precinct performance">Candidate Map</button>
-      <button id="split-toggle" title="Side-by-side comparison of two election years">Compare years</button>
-      <button id="export-btn" title="Download a clean, presentation-ready map graphic">Export slide</button>
+    <nav id="layer-picker" aria-label="Map controls">
+      <div class="picker-selects">
+        <label class="picker-field">
+          <span class="picker-label">Show</span>
+          <select id="layer-select" aria-label="Map layer">
+            <option value="precincts">Precincts</option>
+            <option value="wards">Wards</option>
+            <option value="house">MN House districts</option>
+            <option value="senate">MN Senate districts</option>
+            <option value="congress">U.S. House district</option>
+          </select>
+        </label>
+        <label class="picker-field">
+          <span class="picker-label">Color by</span>
+          <select id="view-select" aria-label="Color the map by">
+            <optgroup label="Campaign">
+              <option value="priority">Partisan-lean tier (2024 DFL share)</option>
+              <option value="targeting">Targeting tier (Tier 1/2/3/Base)</option>
+              <option value="turnout">2022 turnout</option>
+            </optgroup>
+            <optgroup label="Elections">
+              <option value="margin">Vote margin (latest top of ticket)</option>
+            </optgroup>
+            <optgroup label="Census">
+              <option value="income">Median household income</option>
+              <option value="age">Median age</option>
+              <option value="diversity">Residents of color</option>
+            </optgroup>
+          </select>
+        </label>
+        <label class="picker-field">
+          <span class="picker-label">Overlay</span>
+          <select id="overlay-select" aria-label="Demographic overlay">
+            <option value="">None</option>
+            <option value="income">Income</option>
+            <option value="age">Age</option>
+            <option value="diversity">Residents of color</option>
+          </select>
+        </label>
+      </div>
+      <div class="picker-actions">
+        <button id="topbar-scenario-btn" title="Model 2026 turnout and environment scenarios">Scenario model</button>
+        <button id="topbar-clark-btn" title="Map the candidate's 2022 precinct performance">Candidate map</button>
+        <button id="split-toggle" title="Side-by-side comparison of two election years">Compare years</button>
+        <button id="export-btn" title="Download a clean, presentation-ready map graphic">Export slide</button>
+      </div>
     </nav>
 
     <main id="map-wrap">
@@ -101,10 +124,10 @@
   </section>
 
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="js/tabs.js?v=20260701b"></script>
-  <script src="js/app.js?v=20260701b"></script>
-  <script src="js/warroom.js?v=20260701b"></script>
-  <script src="js/record.js?v=20260701b"></script>
+  <script src="js/tabs.js?v=20261003a"></script>
+  <script src="js/app.js?v=20261003a"></script>
+  <script src="js/warroom.js?v=20261003a"></script>
+  <script src="js/record.js?v=20261003a"></script>
   <script src="js/wards.js?v=20261002a"></script>
   <script src="js/history-map.js?v=20261002b"></script>
 </body>

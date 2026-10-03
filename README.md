@@ -62,8 +62,17 @@ precinct‑level vote counts of the precincts inside each area.
 
 Beyond the raw data, the app is built to help a campaign target the city:
 
-- **Priority map** (default) shades each precinct by its DFL lean into an
-  action tier — Maximum GOTV, GOTV + Canvass, Canvass + Persuade, Persuade.
+- **Two precinct tier systems, labeled separately** (pick either under
+  *Color by*):
+  - **Partisan-lean tiers** (default) shade each precinct by its 2024 DFL
+    presidential share — Strong DFL Base, DFL Base, Lean DFL, Swing. They
+    describe the electorate, not the candidate's own support.
+  - **Targeting tiers** (Tier 1 / Tier 2 / Tier 3 / Base) come from the
+    digital targeting plan (`web/data/targeting_tiers.json`, exported from
+    `Gregor_Digital_Targeting_2026.xlsx`). They rank precincts by the gap
+    between DFL share and Clark's 2022 at-large share plus the number of
+    presidential-only voters. The Ward History map uses the same tiers. Only
+    the precinct ranking is published; budget and audience details are not.
 - **Turnout map** shades by real 2022 turnout (ballots cast ÷ registered
   voters, from MN Secretary of State precinct statistics), surfacing the
   precincts with the most registered non‑voters.
@@ -254,9 +263,15 @@ Vercel, Cloudflare Pages, or any web server — just point the host at the
 - ACS median income is top-coded at $250,001; very affluent tracts show as
   "$250,000+".
 - Election results are from the official MN Secretary of State files, but
-  precinct boundaries change between redistricting cycles; 2020 results are
-  reported on 2020 precincts and are aggregated to current districts where
-  the precinct codes still match.
+  Plymouth redrew its wards and precincts in 2022 and reused the precinct
+  codes, so a 2020 result for "2400" covers different ground than today's
+  precinct 2400. The Map tab therefore shows 2020 only citywide and for the
+  U.S. House district; the Ward History tab has 2014–2020 city races rebuilt
+  on the current ward lines (marked as estimates).
+- The Path to Win "votes to win" figure is half of the projected *mayor*
+  votes, not ballots: it applies the 2018 contested race's mayor-line
+  drop-off (15.6%) to the assumed turnout.
+- Basemap tiles are Esri's World Light Gray Canvas (no API key needed).
 - This is an independent civic project, not affiliated with the City of
   Plymouth, Hennepin County, or the State of Minnesota.
 - **Clark's Record** (`web/data/impact.json`) is hand-curated from public
