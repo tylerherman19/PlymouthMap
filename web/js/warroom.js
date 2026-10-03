@@ -4,6 +4,11 @@
 
 const ELECTION_DAY = "November 3, 2026";
 
+// Share of 2018 voters who skipped the mayor line in the last contested race
+// (35,000 mayor votes of 41,456 ballots; Plymouth_Ward_Election_Data_2014-2024,
+// Election Type sheet). Mayor votes, not ballots, decide the race.
+const CONTESTED_MAYOR_DROPOFF = 1 - 35000 / 41456;
+
 let wrImpact = null;
 fetch("data/impact.json").then(r => r.json()).then(d => { wrImpact = d; tryRenderWarRoom(); });
 
@@ -45,7 +50,7 @@ function warroomTargetRows() {
 function warroomTargetTable(rows, kind) {
   if (!rows.length) return `<p class="no-data">Not enough precinct data to rank targets yet.</p>`;
   const cols = kind === "gotv"
-    ? `<th>Precinct</th><th class="num">DFL lean</th><th class="num">2022 GOTV gap</th><th class="num">2024 registered</th>`
+    ? `<th>Precinct</th><th class="num">DFL lean</th><th class="num">2022 GOTV gap</th><th class="num">2022 registered</th>`
     : `<th>Precinct</th><th class="num">DFL lean</th><th class="num">2024 registered</th>`;
   const body = rows.map(r => {
     const chip = `<span class="wr-tier-chip" style="background:${r.tier.bg};color:${r.tier.textColor}">${esc(r.tier.label)}</span>`;
@@ -115,7 +120,8 @@ function renderWarRoom() {
 
   const assumedTurnout = SCENARIO_DEFAULTS.turnoutPct;
   const projectedBallots = reg2024 ? reg2024.registered * assumedTurnout : null;
-  const winNumber = projectedBallots ? Math.floor(projectedBallots / 2) + 1 : null;
+  const projectedMayorVotes = projectedBallots ? projectedBallots * (1 - CONTESTED_MAYOR_DROPOFF) : null;
+  const winNumber = projectedMayorVotes ? Math.floor(projectedMayorVotes / 2) + 1 : null;
 
   const { gotv, persuasion } = warroomTargetRows();
 
@@ -129,13 +135,14 @@ function renderWarRoom() {
           <span class="cand-wosje">Jeff Wosje</span>
         </div>
         <p class="race-context">Wosje has 8 years as mayor and ran uncontested in 2022. Clark won an at-large council
-          seat that year and is now Deputy Mayor. This is the first contested Plymouth mayor's race in years.</p>
+          seat that year and is now Deputy Mayor. This is Plymouth's first contested mayor's race since 2018.</p>
       </div>
 
       <div class="wr-stats">
         <div class="wr-stat-card win">
           <div class="v">${winNumber !== null ? fmt(winNumber) : "—"}</div>
-          <div class="k">Votes to win (50%+1 of ${assumedTurnout * 100}% turnout)</div>
+          <div class="k">Votes to win: half of ~${fmt(projectedMayorVotes)} mayor votes
+            (${assumedTurnout * 100}% turnout, ${(100 * CONTESTED_MAYOR_DROPOFF).toFixed(0)}% skip the race as in 2018)</div>
         </div>
         <div class="wr-stat-card">
           <div class="v">${reg2024 ? fmt(reg2024.registered) : "—"}</div>
@@ -172,18 +179,20 @@ function renderWarRoom() {
       </div>
 
       <div class="wr-section">
-        <h2>The targets: GOTV precincts</h2>
-        <p class="wr-sub">Strongest DFL turf, ranked by how many registered voters skipped the mayor's race in
+        <h2>The targets: GOTV precincts <span class="wr-sys">by partisan lean</span></h2>
+        <p class="wr-sub">Strongest DFL turf (partisan-lean tiers, from the 2024 presidential vote), ranked by how many registered voters skipped the mayor's race in
           2022 — the biggest untapped pools if we simply turn out the base.</p>
         ${warroomTargetTable(gotv, "gotv")}
       </div>
 
       <div class="wr-section">
-        <h2>The targets: persuasion precincts</h2>
-        <p class="wr-sub">Lean-DFL and swing precincts, ranked by size — where the campaign needs to win the
+        <h2>The targets: persuasion precincts <span class="wr-sys">by partisan lean</span></h2>
+        <p class="wr-sub">Lean-DFL and swing precincts (partisan-lean tiers), ranked by size — where the campaign needs to win the
           argument, not just the doors.</p>
         ${warroomTargetTable(persuasion, "persuasion")}
       </div>
+
+      ${warroomTargetingSection()}
 
       <div class="wr-section">
         <h2>The message</h2>
@@ -219,5 +228,36 @@ function warroomEndorsements() {
       ${group("Community leaders", e.community)}
     </div>
     <p class="fineprint"><a href="${esc(e.source)}" target="_blank" rel="noopener">Full endorsement list →</a></p>
+  </div>`;
+}
+
+/* Targeting-plan tiers: a second, separate ranking. Partisan lean says how
+ * Democratic a precinct is; this says where DFL voters least know Clark and
+ * where presidential-only voters are. The two disagree on purpose. */
+function warroomTargetingSection() {
+  const t = state.targeting;
+  if (!t) return "";
+  const tierOf = id => t.tiers.find(x => x.id === id);
+  const p1 = v => (100 * v).toFixed(1) + "%";
+  const rows = t.precincts.slice().sort((a, b) => a.rank - b.rank).map(r => {
+    const tier = tierOf(r.tier);
+    const dark = r.tier === "t1";
+    return `<tr><td class="num">${r.rank}</td>
+      <td>Plymouth ${esc(r.precinct)} <span class="wr-tier-chip" style="background:${tier.color};color:${dark ? "#fff" : "#1f2937"}">${esc(tier.label)}</span></td>
+      <td class="num">${p1(r.dflGov2022)}</td><td class="num">${p1(r.gregor2022)}</td>
+      <td class="num">${fmt(r.presOnly)}</td></tr>`;
+  }).join("");
+  const key = t.tiers.map(x => `<span><i style="background:${x.color}"></i><b>${esc(x.label)}</b> — ${esc(x.action)}</span>`).join("");
+  return `<div class="wr-section">
+    <h2>The targets: digital targeting tiers <span class="wr-sys">by name-recognition gap + turnout</span></h2>
+    <p class="wr-sub">A different lens from the partisan-lean tables above. Clark's 2022 vote barely tracked how
+      Democratic a precinct was, so this ranking looks for DFL-leaning precincts where he ran furthest behind the
+      party and where many voters show up only in presidential years.</p>
+    <div class="wr-tierkey">${key}</div>
+    <div class="wr-table-wrap"><table class="wr-table"><thead><tr><th class="num">Rank</th><th>Precinct</th>
+      <th class="num">DFL share, 2022 Gov.</th><th class="num">Clark, 2022 at-large</th><th class="num">Voted 2024, not 2022</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="fineprint">${esc(t.method)} Clark's share is of a three-way 2022 race, so compare precincts with each other rather than
+      reading the gap as a forecast. Same tiers as the Ward History map; on the Map tab pick Targeting tier under Color by.</p>
   </div>`;
 }
